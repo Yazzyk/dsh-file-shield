@@ -49,7 +49,8 @@ dsh-file-shield/
     index.js            # apply / inject / name，装配各部件
     config.js           # 配置校验与默认值
     rules.js            # 规则编译与 glob 匹配
-    targets.js          # 工具 -> 路径参数表；从 exec.arguments 取候选路径
+    targets.js          # 工具 -> 路径参数表 / 命令参数表
+    commands.js         # 从 shell 命令文本提取候选路径
     guard.js            # tools/pre-execute 决策
     results.js          # tools/post-execute 结果过滤
     browse.js           # GET /file-shield/browse 路由
@@ -121,14 +122,21 @@ Host 是纯 ESM JavaScript（JSDoc 类型 + `node --test`），client 是 TSX �
 
 ### 6.1 派发前拒绝
 
-`tools/pre-execute` 监听器：按内置表取出该工具的参数路径，逐个规范化并匹配。
+`tools/pre-execute` 监听器，两条检查路径。
+
+**路径参数**：按内置表取出该工具的参数路径，逐个规范化并匹配。
 
 | 工具 | 路径参数 |
 |---|---|
 | `read` / `read_image` / `write` / `edit` | `file_path` |
 | `grep` / `glob` | `path` |
 | `str_replace_editor` | `path` |
+| `bash` / `pwsh` | `workdir` |
 | 其它 | `extraPathArgs` 登记项 |
+
+**命令参数**：`bash` / `pwsh` 的 `command`（其它工具可用 `extraCommandArgs` 登记）。shell 不经过 `ctx.fs`，框架也没有暴露 shell/subprocess 事件，`tools/pre-execute` 是唯一能拦住 `cat` 一类读取的位置，因此这里对命令文本做静态提取（`src/host/commands.js`）：按 shell 元字符切词、跟随 `cd`、剥引号与 `NAME=` 前缀、展开 `~`，把除命令名之外的每个词解析成绝对路径，用同一套匹配器比对；不含 glob 元字符的**绝对**规则还直接在命令原文里做字面查找，使带空格的路径无需依赖切词。限定绝对规则是因为相对规则可能只是一个短词（`data`），在命令原文里做子串匹配会误伤 `grep data file.txt`。
+
+静态提取有明确上限：命令文本不等于命令语义，变量拼接、`base64 -d`、`$(...)` 二次求值都能绕开。它拦的是模型自然写出的形态，不是恶意 shell；真正的隔离需要操作系统级的读取限制，那属于宿主能力。
 
 命中即返回：
 
@@ -144,14 +152,18 @@ registry 会把它物化成 `Error: <reason>` 的失败结果，并保留结构�
 
 ### 6.2 结果过滤
 
-`tools/post-execute` 监听器，只处理 `grep` 与 `glob`：
+`tools/post-execute` 监听器，处理两类结果。
+
+**结构化搜索结果**，只处理 `grep` 与 `glob`：
 
 - `grep`：`value.matches[].path`（相对会话工作区）逐个规范化并匹配，命中项剔除；
 - `glob`：`value.paths[]` 同样处理。
 
 返回 `{ kind: 'accept', value: <过滤后的值> }`，由 registry 调用工具自己的 `output.render` 重新渲染，因此不依赖渲染文本格式，持久化的 `presentationMeta` 也随之一致。
 
-结果被完全过滤时不报错，模型看到"无匹配"。这与 ripgrep 静默跳过 `.gitignore` 条目的既有行为一致，且不泄露被屏蔽文件的存在。过滤按每次调用缓存规范化结果，避免逐条 realpath 的重复开销。
+**命令输出**：`bash` / `pwsh` 的 `value.stdout.text` 与 `value.stderr.text` 逐行剔除。递归读取（`grep -rn` / `rg` / `find`）会把被屏蔽文件的**内容**直接打到底流上，而它同样不经过 `ctx.fs`，所以只能在输出侧按行处理：一行里出现某条规则的静态前缀（第一个 glob 元字符之前、截到最后一个 `/` 的部分）即剔除。这一层覆盖 `path:line:content` 与纯路径列表两种形态；不带文件名的输出（`grep -h`、`awk`、`sed -n`）没有可识别的路径，认不出来。
+
+结果被完全过滤时不报错，模型看到"无匹配"或空输出。这与 ripgrep 静默跳过 `.gitignore` 条目的既有行为一致，且不泄露被屏蔽文件的存在。过滤按每次调用缓存规范化结果，避免逐条 realpath 的重复开销。
 
 ### 6.3 系统提示
 

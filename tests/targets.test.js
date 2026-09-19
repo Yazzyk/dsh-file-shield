@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { pathArgsFor, readPathArg, workspaceRoot } from '../src/host/targets.js'
+import { commandArgFor, pathArgsFor, readPathArg, workspaceRoot } from '../src/host/targets.js'
 
 test('targets: 每个内置的读取与写入工具都声明了自己的路径参数', () => {
   assert.deepEqual(pathArgsFor('read', {}), ['file_path'])
@@ -12,9 +12,25 @@ test('targets: 每个内置的读取与写入工具都声明了自己的路径�
   assert.deepEqual(pathArgsFor('glob', {}), ['path'])
 })
 
-test('targets: 没有路径参数的工具不会被检查', () => {
-  assert.deepEqual(pathArgsFor('bash', {}), [])
+test('targets: shell 工具按工作目录参数被检查', () => {
+  assert.deepEqual(pathArgsFor('bash', {}), ['workdir'])
+  assert.deepEqual(pathArgsFor('pwsh', {}), ['workdir'])
+})
+
+test('targets: shell 工具声明了命令参数', () => {
+  assert.equal(commandArgFor('bash', {}), 'command')
+  assert.equal(commandArgFor('pwsh', {}), 'command')
+  assert.equal(commandArgFor('read', {}), undefined)
+})
+
+test('targets: 部署层登记的命令参数覆盖内置表', () => {
+  assert.equal(commandArgFor('my_shell', { my_shell: 'script' }), 'script')
+  assert.equal(commandArgFor('bash', { bash: 'script' }), 'script')
+})
+
+test('targets: 不带路径也不带命令的工具不会被检查', () => {
   assert.deepEqual(pathArgsFor('todo_write', {}), [])
+  assert.equal(commandArgFor('todo_write', {}), undefined)
 })
 
 test('targets: 部署层登记的参数扩展内置表', () => {

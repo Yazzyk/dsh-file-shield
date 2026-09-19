@@ -20,6 +20,7 @@ function guard(patterns, options = {}) {
       return { canonical, lexical, displayPath: lexical }
     },
     extraPathArgs: options.extraPathArgs ?? {},
+    extraCommandArgs: options.extraCommandArgs ?? {},
     ...options.logger === undefined ? {} : { logger: options.logger },
   })
   return { listener, resolved }
@@ -64,10 +65,16 @@ test('guard: 未命中的调用原样向下传递', async () => {
   assert.equal(await listener(call('read', { file_path: '/ws/app.ts' }), next), ALLOW)
 })
 
-test('guard: 没有路径参数的工具不做任何解析就向下传递', async () => {
-  const { listener, resolved } = guard(['**/.env'])
-  assert.equal(await listener(call('bash', { command: 'cat .env' }), next), ALLOW)
-  assert.deepEqual(resolved, [])
+test('guard: shell 命令里的相对路径按工作区解析后被拦下', async () => {
+  const { listener } = guard(['**/.env'])
+  const decision = await listener(call('bash', { command: 'cat .env' }), next)
+  assert.equal(decision.kind, 'deny')
+  assert.match(decision.reason, /\.env/)
+})
+
+test('guard: 与规则无关的命令原样向下传递', async () => {
+  const { listener } = guard(['/etc/shadow'])
+  assert.equal(await listener(call('bash', { command: 'ls -la /tmp' }), next), ALLOW)
 })
 
 test('guard: 缺失或空白的路径参数会向下传递', async () => {
@@ -150,4 +157,61 @@ test('guard: 拒绝会以 debug 级别记入日志', async () => {
   const { listener } = guard(['**/.env'], { logger: { debug: message => lines.push(message) } })
   await listener(call('read', { file_path: '/ws/.env' }), next)
   assert.match(lines[0], /denied read on "\/ws\/\.env" by rule "\*\*\/\.env"/)
+})
+
+test('guard: shell 命令里的绝对路径被拦下', async () => {
+  const { listener } = guard(['/etc/shadow'])
+  const decision = await listener(call('bash', { command: 'cat /etc/shadow' }), next)
+  assert.equal(decision.kind, 'deny')
+  assert.match(decision.reason, /rule "\/etc\/shadow"/)
+})
+
+test('guard: shell 命令里的相对路径按会话工作区解析', async () => {
+  const { listener } = guard(['backend/data/secret.go'])
+  assert.equal((await listener(call('bash', { command: 'head -c 40 backend/data/secret.go' }, '/proj'), next)).kind, 'deny')
+})
+
+test('guard: shell 命令里 cd 之后的相对路径按新目录解析', async () => {
+  const { listener } = guard(['/proj/secret.txt'])
+  assert.equal((await listener(call('bash', { command: 'cd /proj && cat secret.txt' }), next)).kind, 'deny')
+})
+
+test('guard: 带空格的绝对路径由字面查找命中', async () => {
+  const { listener } = guard(['/tmp/my secret.txt'])
+  assert.equal((await listener(call('bash', { command: 'cat "/tmp/my secret.txt"' }), next)).kind, 'deny')
+})
+
+test('guard: 被屏蔽的 workdir 本身就是一次命中', async () => {
+  const { listener } = guard(['/proj/secret'])
+  assert.equal((await listener(call('bash', { command: 'ls', workdir: '/proj/secret' }), next)).kind, 'deny')
+})
+
+test('guard: 相对 workdir 连同会话工作区一起交给解析器', async () => {
+  const { listener, resolved } = guard(['/proj/secret'])
+  await listener(call('bash', { command: 'ls', workdir: 'secret' }, '/proj'), next)
+  assert.deepEqual(resolved[0], { path: 'secret', cwd: '/proj', signal: undefined })
+})
+
+test('guard: 命令里的相对规则按工作区相对形式命中', async () => {
+  const { listener } = guard(['data'])
+  assert.equal((await listener(call('bash', { command: 'ls data' }), next)).kind, 'deny')
+})
+
+test('guard: 短相对规则会命中同名的普通参数，这是已记录的取舍', async () => {
+  // `data` 只是一个词：静态提取无法区分它是路径还是 grep 的模式串。页面选出来的
+  // 路径都是绝对路径，所以这条取舍主要影响手写的短相对规则。
+  const { listener } = guard(['data'])
+  assert.equal((await listener(call('bash', { command: 'grep data file.txt' }), next)).kind, 'deny')
+})
+
+test('guard: 部署层登记的命令参数会被检查', async () => {
+  const { listener } = guard(['/etc/shadow'], { extraCommandArgs: { my_shell: 'script' } })
+  assert.equal((await listener(call('my_shell', { script: 'cat /etc/shadow' }), next)).kind, 'deny')
+})
+
+test('guard: shell 命令被拒绝时也会记日志', async () => {
+  const lines = []
+  const { listener } = guard(['/etc/shadow'], { logger: { debug: message => lines.push(message) } })
+  await listener(call('bash', { command: 'cat /etc/shadow' }), next)
+  assert.match(lines[0], /denied bash on "\/etc\/shadow" by rule "\/etc\/shadow"/)
 })

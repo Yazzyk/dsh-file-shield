@@ -16,7 +16,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, posix, sep } from 'node:path'
 
 /** 一条编译后的规则：原始拼法、是否为绝对规则，以及它的匹配器。 */
-/** @typedef {{ pattern: string, absolute: boolean, regex: RegExp }} Rule */
+/** @typedef {{ pattern: string, absolute: boolean, glob: boolean, prefix: string, regex: RegExp }} Rule */
 
 /**
  * 一个已解析目标参与规则匹配的几种拼法。
@@ -122,6 +122,27 @@ export function globSource(pattern) {
 }
 
 /**
+ * 判断一条规则是 glob 还是字面路径的元字符集。
+ * `\` 转义会让判断偏向 glob，那只意味着少做一次字面子串检查。
+ */
+const GLOB_METACHARACTERS = /[*?[\]{}]/u
+
+/**
+ * 一条规则的静态前缀：第一个 glob 元字符之前的部分，并在最后一个 `/` 处截断。
+ * 用于从工具输出里认出“这一行来自被屏蔽的路径”，而无需解析输出格式。
+ *
+ * @param {string} spelling - 以 `/` 分隔的规则。
+ * @returns {string} 静态前缀；规则不含元字符时就是规则本身。
+ */
+export function staticPrefix(spelling) {
+  const meta = spelling.search(GLOB_METACHARACTERS)
+  if (meta === -1) return spelling
+  const head = spelling.slice(0, meta)
+  const cut = head.lastIndexOf('/')
+  return cut <= 0 ? '' : head.slice(0, cut)
+}
+
+/**
  * 编译已配置的规则，丢弃空条目与非字符串条目。
  *
  * @param {readonly unknown[]} patterns - 已配置的 `deny` 列表。
@@ -145,7 +166,13 @@ export function compileRules(patterns, options = {}) {
       absolute = true
     }
     const spelling = toPosix(pattern)
-    rules.push({ pattern: entry, absolute, regex: new RegExp(`^${globSource(spelling)}$`, flags) })
+    rules.push({
+      pattern: entry,
+      absolute,
+      glob: GLOB_METACHARACTERS.test(spelling),
+      prefix: staticPrefix(spelling),
+      regex: new RegExp(`^${globSource(spelling)}$`, flags),
+    })
   }
   return rules
 }

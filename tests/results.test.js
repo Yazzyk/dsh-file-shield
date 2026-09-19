@@ -151,3 +151,58 @@ test('results: 没有 agent 的调用按工作目录解析', async () => {
   const decision = await listener({ name: 'grep', arguments: {}, signal: undefined }, { isError: false, value }, accept(value))
   assert.deepEqual(decision.value.matches, [])
 })
+
+/** 一个已定局的 shell 工具结果，形状与 dsh-tool-bash 的 output schema 一致。 */
+const bashValue = (stdout, stderr = '') => ({
+  kind: 'foreground',
+  exitCode: 0,
+  signal: null,
+  timedOut: false,
+  aborted: false,
+  timeoutMs: 1000,
+  stdout: { text: stdout, truncated: false },
+  stderr: { text: stderr, truncated: false },
+})
+
+test('results: 命令输出里来自被屏蔽路径的行被剔除', async () => {
+  const listener = filter(['/ws/secret.go'])
+  const value = bashValue('/ws/secret.go:1:package data\n/ws/app.go:2:ok\n')
+  const decision = await listener(exec('bash'), { isError: false, value }, accept(value))
+  assert.equal(decision.value.stdout.text, '/ws/app.go:2:ok\n')
+})
+
+test('results: 标准错误流同样逐行剔除', async () => {
+  const listener = filter(['/ws/secret.go'])
+  const value = bashValue('ok\n', 'cat: /ws/secret.go: Permission denied\n')
+  const decision = await listener(exec('bash'), { isError: false, value }, accept(value))
+  assert.equal(decision.value.stderr.text, '')
+})
+
+test('results: 一个 glob 规则的静态前缀也用于剔除', async () => {
+  const listener = filter(['/ws/secrets/**'])
+  const value = bashValue('/ws/secrets/a.json\n/ws/app.go\n')
+  const decision = await listener(exec('bash'), { isError: false, value }, accept(value))
+  assert.equal(decision.value.stdout.text, '/ws/app.go\n')
+})
+
+test('results: 命令输出没有命中时保持原决策对象', async () => {
+  const listener = filter(['/ws/secret.go'])
+  const value = bashValue('/ws/app.go:1:ok\n')
+  const decision = { kind: 'accept', value }
+  assert.equal(await listener(exec('bash'), { isError: false, value }, async () => decision), decision)
+})
+
+test('results: 背景任务结果没有输出流，不受影响', async () => {
+  const listener = filter(['/ws/secret.go'])
+  const value = { kind: 'background', jobId: 'job-1' }
+  const decision = { kind: 'accept', value }
+  assert.equal(await listener(exec('bash'), { isError: false, value }, async () => decision), decision)
+})
+
+test('results: 剔除命令行会以 debug 级别记入日志', async () => {
+  const lines = []
+  const listener = filter(['/ws/secret.go'], { logger: { debug: message => lines.push(message) } })
+  const value = bashValue('/ws/secret.go:1:x\n')
+  await listener(exec('bash'), { isError: false, value }, accept(value))
+  assert.match(lines[0], /withheld 1 command output line\(s\)/)
+})

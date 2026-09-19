@@ -13,6 +13,7 @@
  * @property {boolean} matchCase - 规则匹配是否区分大小写。
  * @property {boolean} guidance - 模型是否收到策略提示段落。
  * @property {Record<string, string[]>} extraPathArgs - 额外工具名 → 路径参数名。
+ * @property {Record<string, string>} extraCommandArgs - 额外工具名 → shell 命令参数名。
  */
 
 /**
@@ -27,7 +28,9 @@ export function resolveConfig(config) {
   if (typeof source !== 'object' || Array.isArray(source)) {
     throw new Error('file-shield: config must be a mapping')
   }
-  const { deny = [], matchCase = false, guidance = true, extraPathArgs = {} } = /** @type {Record<string, unknown>} */ (source)
+  const {
+    deny = [], matchCase = false, guidance = true, extraPathArgs = {}, extraCommandArgs = {},
+  } = /** @type {Record<string, unknown>} */ (source)
 
   if (!Array.isArray(deny)) throw new Error('file-shield: config.deny must be an array of strings')
   for (const entry of deny) {
@@ -47,6 +50,18 @@ export function resolveConfig(config) {
     }
     resolvedExtra[tool] = [...keys]
   }
+  if (typeof extraCommandArgs !== 'object' || extraCommandArgs === null || Array.isArray(extraCommandArgs)) {
+    throw new Error('file-shield: config.extraCommandArgs must be a mapping of tool name to one command argument key')
+  }
+  /** @type {Record<string, string>} */
+  const resolvedCommands = {}
+  for (const [tool, key] of Object.entries(extraCommandArgs)) {
+    if (tool.trim() === '') throw new Error('file-shield: config.extraCommandArgs keys must be tool names')
+    if (typeof key !== 'string' || key.trim() === '') {
+      throw new Error(`file-shield: config.extraCommandArgs["${tool}"] must be a non-empty argument name`)
+    }
+    resolvedCommands[tool] = key
+  }
 
-  return { deny: [...deny], matchCase, guidance, extraPathArgs: resolvedExtra }
+  return { deny: [...deny], matchCase, guidance, extraPathArgs: resolvedExtra, extraCommandArgs: resolvedCommands }
 }

@@ -33,15 +33,24 @@ Error: Access to "/tmp/shield-target/secret.env" is blocked by deployment policy
 | `read`、`read_image`、`write`、`edit`（`file_path`） | 命中即拒绝 |
 | `str_replace_editor`（`path`） | 命中即拒绝 |
 | `grep`、`glob`（`path`） | 参数命中即拒绝 |
+| `bash`、`pwsh`（`workdir`） | 工作目录命中即拒绝 |
+| `bash`、`pwsh`（`command`） | 命令文本里的路径命中即拒绝，覆盖 `cat`/`head`/`sed`/`cd … && cat …` 等形态 |
 | `grep` 的 `matches[].path`、`glob` 的 `paths[]` | 结果里命中项被剔除，剩下部分交给工具自己的 renderer 重新渲染 |
+| `bash`、`pwsh` 的 `stdout.text` / `stderr.text` | 含被屏蔽路径的行被逐行剔除，覆盖 `grep -rn` / `rg` / `find` 这类递归读取 |
 
-剔除后如果一条都不剩，模型看到的是"无匹配"——和 ripgrep 静默跳过 `.gitignore` 条目的行为一致，且不泄露被屏蔽文件是否存在。
+剔除后如果一条都不剩，模型看到的是"无匹配"或空输出——和 ripgrep 静默跳过 `.gitignore` 条目的行为一致，且不泄露被屏蔽文件是否存在。
+
+### 为什么 shell 要单独一道闸
+
+`read`/`edit`/`grep` 这些工具都经由 `ctx.fs`，路径能被规范化后精确比对。shell 不经过 `ctx.fs`，它把命令文本直接交给子进程，而框架没有暴露任何 shell/subprocess 事件——`tools/pre-execute` 是唯一能拦住它的位置。所以插件对命令文本做静态提取：按 shell 元字符切词、跟随 `cd`、剥引号与 `ENV=` 前缀、展开 `~`，把每个候选词解析成绝对路径后用同一套规则匹配；不含 glob 元字符的绝对规则还会直接在命令原文里做字面查找，这样带空格的路径也能命中。
 
 ## 它不拦什么
 
-- **`bash` / `pwsh` 里的 `cat`。** shell 命令可以读到被屏蔽文件。这是明确的取舍：命令文本匹配既可绕开（变量拼接）又会误伤，因此没有做。
-- **本插件不认识的读文件工具。** 别的插件新增的工具需要在该插件的 `config.extraPathArgs` 里登记参数名。
+- **刻意混淆的 shell 命令。** 变量拼接（`p=sec; cat $p`）、`base64 -d`、`$(...)` 二次求值、命令替换都能绕开文本提取。这是静态检查的固有上限：命令文本不等于命令语义。要堵死这条路只能靠操作系统级的读取限制（例如给子进程一个拒绝读这些路径的 `sandbox-exec` profile），那属于宿主能力，不是插件能做到的。
+- **不带路径的命令输出。** `grep -h`、`awk`、`sed -n` 这类不打印文件名的输出没有可识别的路径，逐行剔除认不出来。
+- **本插件不认识的读文件工具。** 别的插件新增的工具需要在 `config.extraPathArgs`（路径参数）或 `config.extraCommandArgs`（命令参数）里登记。
 - **不经过工具层的 host 侧读取。** 技能加载、`@文件` 引用、附件等直接调用 `ctx.fs` 的消费者不受影响。
+- **短相对规则的误伤。** 规则 `data` 与命令 `grep data file.txt` 无法从文本上区分：那个词到底是路径还是模式串。页面选出来的路径都是绝对路径，所以这条取舍主要影响手写的短相对规则。
 - **`matchCase` 默认关闭**（大小写不敏感）。macOS 与 Windows 的文件系统默认大小写不敏感，规范化后的路径可能不是规则里的拼法，敏感比较会静默漏掉规则。
 
 ## 规则语义
@@ -118,6 +127,8 @@ profile 的 patch 层可以整段替换该行的 `config`：
         extraPathArgs:
           some_reader_tool:
             - target
+        extraCommandArgs:
+          some_shell_tool: script
 ```
 
 | 字段 | 默认 | 含义 |
@@ -125,9 +136,10 @@ profile 的 patch 层可以整段替换该行的 `config`：
 | `deny` | `[]` | 规则列表。空列表是合法状态：新装插件不自己发明规则 |
 | `matchCase` | `false` | 是否区分大小写 |
 | `guidance` | `true` | 是否注入一条系统提示，说明被拒绝是策略而不是故障 |
-| `extraPathArgs` | `{}` | 其它插件的读文件工具：工具名 → 参数名数组 |
+| `extraPathArgs` | `{}` | 其它插件的读文件工具：工具名 → 路径参数名数组 |
+| `extraCommandArgs` | `{}` | 其它插件的 shell 工具：工具名 → 命令参数名 |
 
-设置层的用户规则会覆盖（而不是叠加）这一层的 `deny`；`matchCase`、`guidance`、`extraPathArgs` 只在这一层。
+设置层的用户规则会覆盖（而不是叠加）这一层的 `deny`；`matchCase`、`guidance`、`extraPathArgs`、`extraCommandArgs` 只在这一层。
 
 ## 开发
 

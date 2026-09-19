@@ -17,6 +17,39 @@ import { matchRule, relativesOf, spellingsOf, toPosix } from './rules.js'
 import { workspaceRoot } from './targets.js'
 
 /**
+ * 结果里需要逐行剔除的命令类工具。
+ *
+ * `grep -rn` / `rg` / `find` 这类命令把被屏蔽文件的**内容**直接打到底流上，而且不经过
+ * `ctx.fs`，所以只能按行剔。判定条件是“这一行里出现了某条规则的静态前缀”，因此
+ * `path:line:content` 与纯路径列表都能覆盖。
+ */
+const COMMAND_OUTPUT_TOOLS = Object.freeze(new Set(['bash', 'pwsh']))
+
+/** 命令类工具结果里可逐行过滤的流字段。 */
+const COMMAND_STREAMS = Object.freeze(['stdout', 'stderr'])
+
+/**
+ * 逐行剔除含有被屏蔽路径的行。
+ *
+ * @param {string} text - 一段命令输出。
+ * @param {readonly import('./rules.js').Rule[]} rules - 当前规则。
+ * @returns {{ text: string, removed: number } | undefined} 过滤后的文本；没有可剔的行时为 undefined。
+ */
+export function redactLines(text, rules) {
+  if (text === '') return undefined
+  const kept = []
+  let removed = 0
+  for (const line of text.split('\n')) {
+    if (line !== '' && rules.some(rule => rule.prefix !== '' && line.includes(rule.prefix))) {
+      removed += 1
+      continue
+    }
+    kept.push(line)
+  }
+  return removed === 0 ? undefined : { text: kept.join('\n'), removed }
+}
+
+/**
  * 值得过滤的结果结构：数组字段，以及如何读取单个条目的路径。
  * @type {Record<string, { key: string, pathOf: (entry: unknown) => string | undefined }>}
  */
@@ -79,8 +112,6 @@ export function createPostExecuteListener(options) {
     // 先委托：本监听器位于链首，因此它检查的决策是其它监听器已经确定下来的那个。
     const decision = await next()
     if (decision.kind !== 'accept') return decision
-    const filter = RESULT_FILTERS[exec.name]
-    if (filter === undefined) return decision
     // 另一个监听器替换了渲染后的文本；本过滤器只处理结构化值，不应改写不是它产生的
     // 渲染结果。
     if (Object.hasOwn(decision, 'content')) return decision
@@ -89,6 +120,11 @@ export function createPostExecuteListener(options) {
     if (rules.length === 0) return decision
     const value = Object.hasOwn(decision, 'value') ? decision.value : (result.isError ? undefined : result.value)
     if (typeof value !== 'object' || value === null) return decision
+
+    if (COMMAND_OUTPUT_TOOLS.has(exec.name)) return filterCommandOutput(decision, value, rules, logger)
+
+    const filter = RESULT_FILTERS[exec.name]
+    if (filter === undefined) return decision
     const entries = value[filter.key]
     if (!Array.isArray(entries) || entries.length === 0) return decision
 
@@ -116,5 +152,37 @@ export function createPostExecuteListener(options) {
       value: { ...value, [filter.key]: kept },
       ...decision.additionalContexts === undefined ? {} : { additionalContexts: decision.additionalContexts },
     }
+  }
+}
+
+/**
+ * 逐行剔除命令输出里来自被屏蔽路径的行。
+ *
+ * 只在真的剔掉了行时才替换值：没有命中就返回原决策对象，保持监听器对这个结果“没有意见”
+ * 这一事实，也避免让注册表为一次无变化的改写重新渲染。
+ *
+ * @param {any} decision - 下游确定的 accept 决策。
+ * @param {any} value - 结构化结果值。
+ * @param {readonly import('./rules.js').Rule[]} rules - 当前规则。
+ * @param {{ debug: (message: string) => void } | undefined} logger - 诊断输出。
+ * @returns {any} 原决策，或替换了流的决策。
+ */
+function filterCommandOutput(decision, value, rules, logger) {
+  const replacement = { ...value }
+  let removed = 0
+  for (const stream of COMMAND_STREAMS) {
+    const current = value[stream]
+    if (typeof current !== 'object' || current === null || typeof current.text !== 'string') continue
+    const redacted = redactLines(current.text, rules)
+    if (redacted === undefined) continue
+    removed += redacted.removed
+    replacement[stream] = { ...current, text: redacted.text }
+  }
+  if (removed === 0) return decision
+  logger?.debug(`file-shield: withheld ${removed} command output line(s)`)
+  return {
+    kind: 'accept',
+    value: replacement,
+    ...decision.additionalContexts === undefined ? {} : { additionalContexts: decision.additionalContexts },
   }
 }

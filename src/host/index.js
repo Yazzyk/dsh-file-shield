@@ -44,6 +44,7 @@ export const Config = z.object({
   matchCase: z.boolean().default(false),
   guidance: z.boolean().default(true),
   extraPathArgs: z.dict(z.array(z.string())).default({}),
+  extraCommandArgs: z.dict(z.string()).default({}),
 })
 
 /**
@@ -163,6 +164,7 @@ export function apply(ctx, config) {
     activeRules: () => rules,
     resolveTarget,
     extraPathArgs: resolved.extraPathArgs,
+    extraCommandArgs: resolved.extraCommandArgs,
     logger: ctx.logger,
   }), { prepend: true })
 
