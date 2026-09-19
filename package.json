@@ -2,7 +2,7 @@
   "name": "dsh-file-shield",
   "version": "0.1.0",
   "private": true,
-  "description": "DeepSeek Harness 插件：在 Web GUI 里手动点选文件或目录，屏蔽 agent 对它们的读取、搜索、写入与编辑。Block an agent from reading, searching, writing, or editing chosen files and directories, picked from the Web GUI.",
+  "description": "DeepSeek Harness 插件：在 Web GUI 里点选文件或目录，屏蔽 agent 对它们的读取、搜索、写入与编辑，使机密内容与敏感词不进入对话（含敏感词导致请求 400 的场景）。Blocks an agent from reading, searching, writing, or editing chosen files and directories, keeping their contents out of the conversation.",
   "type": "module",
   "main": "lib/index.js",
   "license": "MIT",

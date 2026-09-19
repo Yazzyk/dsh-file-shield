@@ -4,12 +4,15 @@
 
 规则既可以在 Web GUI 的 **Plugins → dsh-file-shield** 页面里手动点选文件或目录来增删，也可以在 profile 的 `cordis.patch.yml` 里作为部署默认写死。
 
-> A DeepSeek Harness (dsh) plugin that blocks an agent from reading, searching, writing, or editing chosen files and directories, with a file/directory picker on the plugin's own page in the Web GUI.
+最常见的用法是挡住**含敏感词或机密内容的文件**：这类文字一旦被读进对话，provider 的内容审核会让之后每个请求都返回 400，会话就此卡死；提前屏蔽它们，等于从源头掐掉这件事。
+
+> A DeepSeek Harness (dsh) plugin that blocks an agent from reading, searching, writing, or editing chosen files and directories, keeping their contents — including text a provider rejects with a 400 — out of the conversation. Rules are picked from a file/directory browser on the plugin's own page in the Web GUI.
 
 仓库主页：<https://github.com/Yazzyk/dsh-file-shield>
 
 ## 目录
 
+- [适用场景：含敏感词的文件让对话报 400](#适用场景含敏感词的文件让对话报-400)
 - [它拦什么](#它拦什么)
 - [它不拦什么](#它不拦什么)
 - [规则语义](#规则语义)
@@ -17,6 +20,14 @@
 - [怎么配置](#怎么配置)
 - [开发](#开发)
 - [许可](#许可)
+
+## 适用场景：含敏感词的文件让对话报 400
+
+provider 的内容审核命中时，会直接拒绝整个请求（HTTP 400）。麻烦在于这是**会话级**的：一旦那些文字已经写进会话历史，之后每一轮请求都会带着它一起被拒，对话就卡死了，只能压缩上下文或新开会话。
+
+把这个场景交给屏蔽列表就行：agent 从一开始就读不到这些文件，文字不会进入会话历史，后续请求里自然也不会出现。工作区里那些"每次搜索都命中、每次都被顺手读一遍"的文件尤其值得放进去——抓下来的行情快照、字典表、第三方原始数据。
+
+这是**事前预防，不是事后修复**。本插件不改写已经提交的历史，已经被拒的会话仍然需要压缩上下文或新开会话才能继续；要处理已经进入会话的内容，那是改写类插件的活，不是这一层的职责。
 
 ## 它拦什么
 
