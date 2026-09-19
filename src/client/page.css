@@ -1,0 +1,152 @@
+/*
+ * File Shield 页面样式。类名带前缀，因为本插件不在 shell 的 CSS Modules
+ * 管线内；颜色取自主题的语义 token，
+ * 页面因此跟随浅色与深色模式。
+ */
+
+.dfs-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, inherit);
+}
+
+.dfs-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dfs-heading {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.dfs-note {
+  margin: 0;
+  color: var(--dsw-alias-label-caption, inherit);
+}
+
+.dfs-note-error {
+  color: var(--dsw-alias-label-error, inherit);
+}
+
+.dfs-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dfs-rule {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2, transparent);
+  border-radius: 8px;
+}
+
+.dfs-rule .dfs-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dfs-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.dfs-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dfs-actions > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.dfs-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.dfs-status {
+  color: var(--dsw-alias-label-caption, inherit);
+}
+
+.dfs-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+
+.dfs-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dfs-crumbs .dfs-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dfs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dfs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dfs-row:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover, transparent);
+}
+
+.dfs-row:disabled {
+  cursor: default;
+  color: var(--dsw-alias-label-dimmed, inherit);
+}
+
+.dfs-rowName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dfs-tag {
+  color: var(--dsw-alias-label-caption, inherit);
+  font-size: 11px;
+}

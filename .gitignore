@@ -1,0 +1,6 @@
+# 依赖与构建缓存
+node_modules/
+*.tsbuildinfo
+
+# 编辑器与系统噪声
+.DS_Store

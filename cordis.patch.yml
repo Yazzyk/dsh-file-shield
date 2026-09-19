@@ -1,0 +1,18 @@
+# dsh-file-shield 的包 patch：只插入一行，不预设任何规则。
+#
+# patch 会整段替换目标行的 `config`，所以想让规则来自组合层的部署，需要在
+# profile 自己的 cordis.patch.yml 里把这一行完整重述一遍：
+#
+#   - insert:
+#       - id: file-shield
+#         name: dsh-file-shield
+#         config:
+#           deny:
+#             - '**/.env'
+#             - '**/*.pem'
+#
+# 从 Plugins 页面添加的规则存在 `file-shield` 设置命名空间（用户层），
+# 并覆盖这里这一组合层。
+- insert:
+    - id: file-shield
+      name: dsh-file-shield

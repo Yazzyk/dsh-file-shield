@@ -1,0 +1,6 @@
+# 本仓库自身的 pnpm 设置（单包项目，因此没有 packages 列表）。
+#
+# esbuild 的安装脚本会下载对应平台的二进制，`pnpm run build` 依赖它，
+# 所以这里显式放行；其余依赖一律保持 pnpm 默认的构建脚本门禁。
+allowBuilds:
+  esbuild: true
