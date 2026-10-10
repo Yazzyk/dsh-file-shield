@@ -1,6 +1,6 @@
 {
   "name": "dsh-file-shield",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "DeepSeek Harness 插件：在 Web GUI 里点选文件或目录，屏蔽 agent 对它们的读取、搜索、写入与编辑，使机密内容与敏感词不进入对话（含敏感词导致请求 400 的场景）。Blocks an agent from reading, searching, writing, or editing chosen files and directories, keeping their contents out of the conversation.",
   "type": "module",
@@ -43,25 +43,24 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "dependencies": {
-    "schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "~3.18.4"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2"
+    "@deepseek-ai/cordis": "~4.0.4"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.2",
-    "@deepseek-ai/dsh-client-locale": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-settings": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-client-ui-workspace": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-fs": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-host-webserver": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-settings": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-system-prompt": "0.1.6-alpha.2",
-    "@deepseek-ai/dsh-tools": "0.1.6-alpha.2",
+    "@deepseek-ai/cordis": "~4.0.4",
+    "@deepseek-ai/dsh-client-locale": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-client-ui-workspace": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-fs": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-host-webserver": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
     "@types/node": "^26.6.2",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",

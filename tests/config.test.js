@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { resolveConfig } from '../src/host/config.js'
+import { isVolatileRef, readConfigField, resolveConfig } from '../src/host/config.js'
 
 test('config: 缺少 config 块时就是空规则列表', () => {
   assert.deepEqual(resolveConfig(undefined), {
@@ -43,4 +43,27 @@ test('config: 额外的工具路径参数会被接受', () => {
 test('config: 额外的命令参数会被接受', () => {
   const config = resolveConfig({ extraCommandArgs: { my_shell: 'script' } })
   assert.deepEqual(config.extraCommandArgs, { my_shell: 'script' })
+})
+
+/** 按 volatile 引用协议造一个 loader 交给 `apply` 的字段值。 */
+function volatileRef(value) {
+  let current = value
+  return Object.freeze({
+    get: () => current,
+    [Symbol.for('cosmokit.volatile.write')]: (next) => { current = next },
+  })
+}
+
+test('config: volatile 引用按协议识别，字面值原样返回', () => {
+  const ref = volatileRef(['**/.env'])
+  assert.equal(isVolatileRef(ref), true)
+  assert.equal(isVolatileRef(['**/.env']), false)
+  assert.equal(isVolatileRef(null), false)
+  assert.deepEqual(readConfigField(ref), ['**/.env'])
+  assert.deepEqual(readConfigField(['**/.env']), ['**/.env'])
+})
+
+test('config: deny 是 volatile 引用时按引用里的快照校验', () => {
+  assert.deepEqual(resolveConfig({ deny: volatileRef(['**/.env']) }).deny, ['**/.env'])
+  assert.throws(() => resolveConfig({ deny: volatileRef('**/.env') }), /config\.deny must be an array of strings/)
 })

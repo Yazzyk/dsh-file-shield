@@ -3,31 +3,31 @@
  *
  * 页面在本地暂存编辑，只在点击保存时写入，
  * 所以屏幕上的内容就是一次保存会存下的内容。
- * 规则列表读自宿主插件安装的 `file-shield` 设置段；
- * 用户层缺失意味着 `cordis.patch.yml` 里的部署默认生效。
+ * 规则列表读自宿主 settings 服务投影出的本插件行表单；
+ * 用户层缺失意味着 `cordis.patch.yml` 里的组合默认生效。
  *
  * @module dsh-file-shield/src/client/Page
  */
 
 import { Button, Input, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { useMemo, useState, useSyncExternalStore } from 'react'
-// 仅类型：引入 `plugins.bundle.config` 座位与 `ctx.settingsScope`，不产生运行时导入。
+// 仅类型：引入 `plugins.bundle.config` 座位与 `ctx.configForms`，不产生运行时导入。
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DirectoryBrowser } from './Browser.tsx'
 import type { NS } from './locales.ts'
 
-/** 本页面编辑的设置段。 */
+/** 本页面编辑的设置段：宿主 schema 里唯一可编辑的字段。 */
 export interface RulesSection {
   deny?: string[]
 }
 
 /** 注册项注入页面的业务面。 */
 export interface FileShieldFace {
-  /** 绑定在 `file-shield` 设置命名空间上的作用域。 */
-  scope: SettingsScope<RulesSection>
+  /** 宿主为本插件行投影出的配置表单；部署里没有 settings 服务时为 undefined。 */
+  form: ConfigForm<RulesSection> | undefined
   /** 打开官方目录选择器；没有挂载 workspace UI 时为 undefined。 */
   pickDirectory: (() => Promise<string | null>) | undefined
 }
@@ -52,12 +52,23 @@ function isPattern(rule: string): boolean {
  * 渲染页面。
  *
  * @param props - 组装后的 slot props。
- * @returns 摘要视图的一行文本，或页面视图的表单。
+ * @returns 没有配置表单时的一行说明，否则是规则编辑器。
  */
 export function FileShieldPage(props: FileShieldPageProps) {
-  const { t, view, scope, pickDirectory } = props
-  const subscribe = useMemo(() => (listener: () => void) => scope.subscribe(listener), [scope])
-  const snapshot = useSyncExternalStore(subscribe, () => scope.getSnapshot(), () => scope.getSnapshot())
+  if (props.form === undefined) return <p className="dfs-note">{props.t('unavailable')}</p>
+  return <RulesEditor {...props} form={props.form} />
+}
+
+/**
+ * 规则编辑器本体；拿到配置表单后才渲染，因此 hook 顺序与表单生命周期无关。
+ *
+ * @param props - 组装后的 slot props，附上已确认存在的配置表单。
+ * @returns 摘要视图的一行文本，或页面视图的表单。
+ */
+function RulesEditor(props: FileShieldPageProps & { form: ConfigForm<RulesSection> }) {
+  const { t, view, form, pickDirectory } = props
+  const subscribe = useMemo(() => (listener: () => void) => form.subscribe(listener), [form])
+  const snapshot = useSyncExternalStore(subscribe, () => form.getSnapshot(), () => form.getSnapshot())
 
   /** 暂存列表；`null` 表示"未编辑"，此时显示已存储的设置段。 */
   const [staged, setStaged] = useState<string[] | null>(null)
@@ -97,8 +108,8 @@ export function FileShieldPage(props: FileShieldPageProps) {
   const save = async () => {
     if (staged === null) return
     setStatus('saving')
-    await scope.set('deny', staged)
-    const accepted = scope.getSnapshot().value?.deny
+    await form.set('deny', staged)
+    const accepted = form.getSnapshot().value?.deny
     if (accepted !== undefined && sameRules(accepted, staged)) {
       setStaged(null)
       setStatus('saved')
@@ -107,11 +118,11 @@ export function FileShieldPage(props: FileShieldPageProps) {
     }
   }
 
-  /** 清除用户层，使部署默认重新生效。 */
+  /** 清除用户层，使组合默认重新生效。 */
   const reset = async () => {
     setStatus('saving')
-    await scope.unset('deny')
-    const layer = scope.getSnapshot().user
+    await form.unset('deny')
+    const layer = form.getSnapshot().user
     if (typeof layer !== 'object' || layer === null || !('deny' in layer)) {
       setStaged(null)
       setStatus('saved')

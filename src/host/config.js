@@ -1,11 +1,39 @@
 /**
  * 插件行配置：在加载时校验一次，绝不悄悄越过错误类型去取默认值。
  *
- * 空的 `deny` 列表是合法状态而非配置错误：规则列表通常由 Plugins 页面写入的
- * `file-shield` 设置命名空间拥有，刚安装的插件必须在加载时不自己发明规则。
+ * 空的 `deny` 列表是合法状态而非配置错误：规则列表由 Plugins 页面写入 profile patch，
+ * 刚安装的插件必须在加载时不自己发明规则。
+ *
+ * `deny` 在 schema 里是 volatile 字段，因此 loader 交给 `apply` 的值是一个共享引用；
+ * 引用协议由 `@deepseek-ai/cosmokit` 用同一个 symbol 在所有副本间标识，这里只按协议读取，
+ * 不 import 那个包。
  *
  * @module dsh-file-shield/src/host/config
  */
+
+/** volatile 引用协议的写入口；`Symbol.for` 让不同副本共享同一个身份。 */
+const VOLATILE_WRITE = Symbol.for('cosmokit.volatile.write')
+
+/**
+ * 判断一个已解析的配置值是否是 loader 的 volatile 引用。
+ *
+ * @param {unknown} value - 已解析的配置值。
+ * @returns {boolean} 是引用时为 true。
+ */
+export function isVolatileRef(value) {
+  return typeof value === 'object' && value !== null && VOLATILE_WRITE in value
+}
+
+/**
+ * 读取一个配置字段的当前值：volatile 字段取引用里的快照，普通字段就是它自己。
+ *
+ * @param {unknown} value - `config` 上的一个字段。
+ * @returns {unknown} 该字段当前的字面值。
+ */
+export function readConfigField(value) {
+  if (!isVolatileRef(value)) return value
+  return (/** @type {{ get: () => unknown }} */ (value)).get()
+}
 
 /**
  * @typedef {object} FileShieldConfig
@@ -31,9 +59,10 @@ export function resolveConfig(config) {
   const {
     deny = [], matchCase = false, guidance = true, extraPathArgs = {}, extraCommandArgs = {},
   } = /** @type {Record<string, unknown>} */ (source)
+  const denyValue = readConfigField(deny)
 
-  if (!Array.isArray(deny)) throw new Error('file-shield: config.deny must be an array of strings')
-  for (const entry of deny) {
+  if (!Array.isArray(denyValue)) throw new Error('file-shield: config.deny must be an array of strings')
+  for (const entry of denyValue) {
     if (typeof entry !== 'string') throw new Error('file-shield: config.deny must contain only strings')
   }
   if (typeof matchCase !== 'boolean') throw new Error('file-shield: config.matchCase must be a boolean')
@@ -63,5 +92,5 @@ export function resolveConfig(config) {
     resolvedCommands[tool] = key
   }
 
-  return { deny: [...deny], matchCase, guidance, extraPathArgs: resolvedExtra, extraCommandArgs: resolvedCommands }
+  return { deny: [...denyValue], matchCase, guidance, extraPathArgs: resolvedExtra, extraCommandArgs: resolvedCommands }
 }

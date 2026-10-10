@@ -11,8 +11,8 @@
 #             - '**/.env'
 #             - '**/*.pem'
 #
-# 从 Plugins 页面添加的规则存在 `file-shield` 设置命名空间（用户层），
-# 并覆盖这里这一组合层。
+# 从 Plugins 页面添加的规则写进 profile patch 里同一行的 `config.deny`（用户层），
+# 并整段替换这里这一组合层的值。
 - insert:
     - id: file-shield
       name: dsh-file-shield

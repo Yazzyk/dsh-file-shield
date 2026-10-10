@@ -2,6 +2,7 @@
 
 日期：2026-09-19
 状态：已获用户批准，待用户复核本文档
+最后修订：2026-10-10（迁移到 dsh 0.2.0-rc.2 的配置面，见 §11.5）
 
 ## 1. 目标
 
@@ -21,7 +22,7 @@
 | 拒绝模型工具调用 | `tools/pre-execute` 瀑布 | registry 自己落实 `deny`，工具体不执行，包装/旁路无法绕过（`packages/core/tools/src/index.ts:137-146`、`:1493-1503`） |
 | 过滤搜索结果 | `tools/post-execute` 携带结构化 `value` | registry 用工具自己的 `output.render` 重新渲染，因此不必解析模型可见文本（`packages/core/tools/src/index.ts:1773-1784`） |
 | 路径规范化 | `ctx.fs.resolve()` | 得到 canonical realpath，`..` 与符号链接别名无法逃逸（`packages/fs/fs/src/index.ts:107-116`） |
-| 规则持久化与实时生效 | `ctx.settings.register()`（host）+ `ctx.settingsScope.bind()`（client） | 带 revision 栅栏的持久化命名空间；第三方插件已有先例 `dsh-better-sidebar/src/index.ts:806-836` |
+| 规则持久化与实时生效 | 行 config 的 volatile `deny`（host）+ `ctx.configForms.get('file-shield')`（client） | 只有 volatile 字段能由 Plugins 页面编辑，且 loader 用「写引用 + `loader/volatile-update`」提交，不重启插件 |
 | 插件页面 | `plugins.bundle.config` 键控槽，键 = 包名 | 渲染在 Plugins 页该插件卡片自己的页面上（`packages/client/ui-plugin-manager/src/client/slot-contract.ts:33-38`） |
 | 选目录 | `ctx.uiWorkspace.pickDirectory()` | 直接返回所选绝对路径，官方选择器（`packages/client/ui-workspace/src/client/navigation.ts:64-66`） |
 | 选文件 | 插件自建只读浏览路由 | 现有 `listDirectory` 只列目录，没有文件选择器（`packages/host/directory-picker/src/types.ts:21-39`） |
@@ -196,11 +197,11 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
   - **添加目录**：`uiWorkspace.pickDirectory()`；
   - **添加文件**：打开自带浏览器对话框，从宿主 home 开始逐层进入目录、点选文件；
   - **手动输入**：一个文本框用于粘贴路径或 glob；
-  - **保存**：`settingsScope.set('deny', [...])`；
-  - **恢复部署默认**：`settingsScope.unset('deny')`。
+  - **保存**：`form.set('deny', [...])`；
+  - **恢复部署默认**：`form.unset('deny')`。
   - 显示当前是否已覆盖部署默认（`user` 层存在即视为覆盖），以及不可写状态（`writable === false` 或 `mode === 'memory'`）下的只读提示。
 
-`inject = ['slots', 'settingsScope']`；`uiWorkspace` 用 `ctx.get('uiWorkspace')` 读取而非写进 `inject`——缺失时插件仍须激活，只是隐藏目录选择按钮。
+`inject = ['slots', 'locale']`；`configForms` 与 `uiWorkspace` 都用 `ctx.get(...)` 在渲染时机会性读取，而不是写进 `inject`——宿主没装载 settings 或 workspace UI 时插件仍须激活，页面只是显示「不可用」或隐藏目录选择按钮。`configForms` 的命名空间是 profile 条目 id，也就是本 bundle patch 声明的 `file-shield`（官方插件同样硬编码自己的行 id）。
 
 文案全部来自本包字典；样式为普通 CSS，构建期内联成字符串，插件 fiber 内一次性注入 `<style>`，类名统一前缀 `dfs-`。
 
@@ -208,10 +209,10 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 
 `build.mjs` 用 esbuild 产出两半：
 
-- Host：`src/host/index.js` → `lib/index.js`，`format=esm`、`platform=node`，`external: schemastery` + node 内置模块。host 侧运行时**不导入任何 `@deepseek-ai/*`**，避免依赖加载器的裸标识符解析行为。
+- Host：`src/host/index.js` → `lib/index.js`，`format=esm`、`platform=node`，`external: @deepseek-ai/schemastery` + node 内置模块。host 侧运行时只导入这一个 `@deepseek-ai/*` 包（配置 schema 要用它声明 volatile 字段），其余服务类型都是 type-only。
 - Client：`src/client/index.tsx` → `lib/client.js`，`format=cjs`、`platform=browser`，external 为平台模块表：`react`、`react/jsx-runtime`、`react-dom`、`react-dom/client`、`@deepseek-ai/cordis`、`@deepseek-ai/dsh-client-store`、`@deepseek-ai/dsh-client-ui-slots`、`@deepseek-ai/dsh-client-ui-primitives`、`@deepseek-ai/dsh-client-ui-dockkit`；banner/footer 包出 `window.__ModuleLoader__.load({ id, factory: (require) => { … return module.exports; } })`；`.css` 以 `text` loader 内联。
-- 运行期依赖只有 `schemastery`（真实 dependency）。host 半在运行时不导入任何 `@deepseek-ai/*`：服务类型都是 `import type {}`，编译后擦除，所以插件不依赖加载器如何解析裸标识符。
-- 类型来源（`@deepseek-ai/dsh-*` 与 client 侧各包、react 类型）只进 `devDependencies`，版本钉在已发布构建所用的 `0.1.6-alpha.2`（cordis `^4.0.2`），编译后不再需要。
+- 运行期依赖只有 `@deepseek-ai/schemastery`（真实 dependency）。client 半在运行时不导入任何 `@deepseek-ai/*`：服务类型都是 `import type {}`，编译后擦除，所以插件不依赖加载器如何解析裸标识符。
+- 类型来源（`@deepseek-ai/dsh-*` 与 client 侧各包、react 类型）只进 `devDependencies`，版本钉在目标运行时的 `0.2.0-rc.2`（cordis `~4.0.4`），编译后不再需要。
 - 构建器是 **esbuild** 而不是官方 preset：`packages/client/tsdown.client.ts` 不是已发布包，且会按 `packages/*/*/package.json` 查找包名、对仓外包名直接抛错，仓外插件无法复用。
 
 产物提交进包，使 `link:` 安装后即可用；`--watch` 供 client HMR 开发。
@@ -237,7 +238,8 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 1. 浏览应答去掉了 `size` 字段（UI 用不到，省掉每条的 stat）。
 2. 规则条目只对 glob 规则打标签：客户端无法可靠判断一个路径是文件还是目录。
 3. 构建器换成 esbuild（原因见 §9）。
-4. host 半新增 `services.d.ts`，把 `ctx.tools` / `ctx.fs` / `ctx.settings` / `ctx.systemPrompt` / `ctx.webServer` 的声明以 type-only 方式拉进来，使 `tsc` 能对着真实服务契约检查。
+4. host 半新增 `services.d.ts`，把 `ctx.tools` / `ctx.fs` / `ctx.systemPrompt` / `ctx.webServer` 的声明以 type-only 方式拉进来，使 `tsc` 能对着真实服务契约检查；loader 发出的 `loader/volatile-update` 目前没有官方类型，也在这份声明里按实际负载补上。
+5. **2026-10-10：迁移到 dsh 0.2.0-rc.2 的配置面。** 0.1.6 契约里的 `ctx.settings.installSection()`（host）与 `ctx.settingsScope.bind()`（client）在 0.2.0-rc.2 都已移除：settings 现在把「每个 profile 条目的 Config schema」投影成表单，只有 schema 标成 `.volatile()` 的字段可由页面写入。于是规则列表改住行 config 的 `deny`，并标成 volatile；client 用 `ctx.configForms.get('file-shield')` 拿同一条目的表单。loader 对 volatile-only 变更只写引用并发 `loader/volatile-update`，插件在该事件里重建匹配器，因此保存仍然不需要重启。取证（目标运行时 0.2.0-rc.2）：`@deepseek-ai/dsh-settings/lib/index.js` 的 `SettingsForms`（`describe` / `write` / `volatileForm`）、`@deepseek-ai/dsh-client-ui-settings/lib/types/client/config-form.d.ts` 的 `ConfigForms` / `ConfigForm`、`@deepseek-ai/cordis-plugin-loader/lib/index.js` 的 `Entry.update` → `_commitVolatile` → `loader/volatile-update`。
 
 ## 12. 已知边界
 

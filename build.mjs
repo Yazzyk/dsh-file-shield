@@ -60,7 +60,7 @@ const hostOptions = {
   target: 'node22',
   sourcemap: false,
   logLevel: 'info',
-  external: ['schemastery'],
+  external: ['@deepseek-ai/schemastery'],
 }
 
 /** @type {import('esbuild').BuildOptions} */

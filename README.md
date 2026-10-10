@@ -75,6 +75,8 @@ Error: Access to "/tmp/shield-target/secret.env" is blocked by deployment policy
 
 ## 安装
 
+面向 dsh `0.2.0-rc.2`（client 面用的 `ctx.configForms` 与 host 面的 volatile 配置都是这一代的契约；0.1.6 的 `settingsScope` / `settings.installSection` 已不存在）。
+
 ### 从 GitHub（推荐）
 
 ```sh
@@ -115,9 +117,11 @@ dsh plugin --profile <profile> remove dsh-file-shield
 - **选择文件…** 打开插件自带的浏览器，逐层进入目录并点选文件；
 - **系统目录选择器…** 调用 dsh 自己的目录选择器（需要装载 workspace UI）；
 - 也可以直接输入路径或 glob；
-- **保存** 把规则写进 `file-shield` 设置命名空间（用户层），**恢复部署默认** 清掉用户层。
+- **保存** 把规则写进 profile patch 里本行的 `config.deny`（用户层），**恢复部署默认** 清掉用户层。
 
-写进设置层的规则立即对下一次工具调用生效，不需要重启。因为宿主没有暴露列文件的接口（目录选择器只列目录、`workspaceFiles.list` 限于会话工作区），选文件用的是一条插件自己的只读路由 `GET /file-shield/browse?path=<绝对路径>`：只接受 GET、只列目录内容、`Cache-Control: no-store`，并且每个请求都先过 `ctx.connection.requestRejection()`——Host/Origin 围栏挡 DNS rebinding 与跨站请求，浏览器会话 Cookie 挡未认证调用。该路由只在同时装配了 `webServer` 与 `connection` 的组合里挂载；缺其中任一时文件浏览器不可用，而不是以无认证方式开放目录列举。
+`deny` 是宿主 schema 里的 **volatile 字段**：保存只让 loader 更新它持有的配置引用，插件不重启，新规则对下一次工具调用立即生效。页面的数据面是宿主 settings 服务为 `file-shield` 这一行投影出的配置表单（`ctx.configForms`，行 id 就是本 bundle patch 声明的那个）；部署里没有这个服务时页面只显示「不可用」，不会把插件激活一起拖住。
+
+因为宿主没有暴露列文件的接口（目录选择器只列目录、`workspaceFiles.list` 限于会话工作区），选文件用的是一条插件自己的只读路由 `GET /file-shield/browse?path=<绝对路径>`：只接受 GET、只列目录内容、`Cache-Control: no-store`，并且每个请求都先过 `ctx.connection.requestRejection()`——Host/Origin 围栏挡 DNS rebinding 与跨站请求，浏览器会话 Cookie 挡未认证调用。该路由只在同时装配了 `webServer` 与 `connection` 的组合里挂载；缺其中任一时文件浏览器不可用，而不是以无认证方式开放目录列举。
 
 ### 从 `cordis.patch.yml`（部署默认）
 
@@ -150,7 +154,7 @@ profile 的 patch 层可以整段替换该行的 `config`：
 | `extraPathArgs` | `{}` | 其它插件的读文件工具：工具名 → 路径参数名数组 |
 | `extraCommandArgs` | `{}` | 其它插件的 shell 工具：工具名 → 命令参数名 |
 
-设置层的用户规则会覆盖（而不是叠加）这一层的 `deny`；`matchCase`、`guidance`、`extraPathArgs`、`extraCommandArgs` 只在这一层。
+页面上保存的用户规则与这一层写的是同一个字段，因此用户层会**整段替换**这一层的 `deny`（不是叠加）；清掉用户层后，这一层的值重新生效。`matchCase`、`guidance`、`extraPathArgs`、`extraCommandArgs` 是普通字段（不是 volatile），只能在这一层配置，改它们才会重启插件。
 
 ## 开发
 

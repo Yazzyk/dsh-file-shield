@@ -2,10 +2,12 @@
  * File Shield：拒绝目标路径命中部署规则的模型工具调用，并让被屏蔽路径不出现在搜索
  * 结果里。
  *
- * 规则列表分两层。组合层是本插件的 `config.deny`；用户层是 Plugins 页面写入的
- * `file-shield` 设置命名空间，在挂载了 settings 提供者时由它生效。两层都编译进同一个
- * 匹配器，每次变更都重新编译，因此在 GUI 里保存的规则对下一次工具调用立即生效，
- * 无需重启。
+ * 规则列表住在插件行的 `config.deny`：组合层是本 bundle 自己 patch 里的默认值，用户层是
+ * 由 Plugins 页面写进 profile patch 的同一个字段。
+ *
+ * `deny` 是 volatile 字段，因此那条写入只更新 loader 持有的配置引用，不会重启本插件；本
+ * 插件监听 `loader/volatile-update` 后重新编译匹配器，所以页面上保存的规则对下一次工具
+ * 调用立即生效。其余行字段属于组合决策，不是 volatile，Plugins 页面看不到它们。
  *
  * 本插件不拥有任何 service。它注册一个 pre-execute 决策、一个 post-execute 结果
  * 过滤器、一个可选的系统提示段落，以及——只在同时装配了 web server 与 connection
@@ -14,45 +16,32 @@
  * @module dsh-file-shield
  */
 
-import z from 'schemastery'
+import z from '@deepseek-ai/schemastery'
 import { BROWSE_PATH, createBrowseHandler } from './browse.js'
-import { resolveConfig } from './config.js'
+import { readConfigField, resolveConfig } from './config.js'
 import { createPreExecuteListener } from './guard.js'
 import { createPostExecuteListener } from './results.js'
 import { compileRules } from './rules.js'
 
-/** 本插件安装的设置段落类型，页面编辑的就是它。 */
-/**
- * @typedef {{ deny: string[] }} RulesSection
- */
-
 /** loader 诊断使用的 Cordis 插件名。 */
 export const name = 'file-shield'
 
-/** 本插件读取的 service。`settings`、`webServer`、`systemPrompt` 均为可选。 */
+/** 本插件读取的 service。`webServer`、`systemPrompt` 与 `connection` 均为可选。 */
 export const inject = ['tools', 'fs']
-
-/** Plugins 页面写入规则列表所用的设置命名空间。 */
-export const SETTINGS_NAMESPACE = 'file-shield'
 
 /**
  * 插件行 config 的 schema。loader 按它校验该行，所以本插件读取的每个字段都必须出现在
  * 这里；对于绕过 loader 直接调用 `apply` 的调用方，`resolveConfig` 会再检查一遍取值。
+ *
+ * `deny` 标成 volatile：只有 volatile 字段能由 Plugins 页面编辑，也只有在 volatile
+ * 路径上 loader 才会把变更提交进运行中的 fiber，而不是重启插件。
  */
 export const Config = z.object({
-  deny: z.array(z.string()).default([]),
+  deny: z.array(z.string()).default([]).volatile(),
   matchCase: z.boolean().default(false),
   guidance: z.boolean().default(true),
   extraPathArgs: z.dict(z.array(z.string())).default({}),
   extraCommandArgs: z.dict(z.string()).default({}),
-})
-
-/**
- * 设置段落的 schema。只有规则列表可由用户编辑：其余行字段属于组合决策，因此 Plugins
- * 页面看不到它们。
- */
-const SettingsSection = z.object({
-  deny: z.array(z.string()).default([]),
 })
 
 /**
@@ -105,28 +94,38 @@ export function apply(ctx, config) {
    */
   const compile = patterns => compileRules(patterns, { matchCase: resolved.matchCase })
 
-  /** 权威规则列表：设置段落挂载期间取该段落，否则取行 config。 */
-  let source = () => ({ deny: resolved.deny })
-  let rules = compile(resolved.deny)
-
-  /** 从权威来源重新编译；在挂载、卸载以及每次提交变更时运行。 */
-  const rebuild = () => {
-    const section = source()
-    rules = compile(Array.isArray(section?.deny) ? section.deny : resolved.deny)
+  /**
+   * 规则字段的当前值：loader 解析后它是 volatile 引用，直接调用 `apply` 时是字面数组。
+   * @returns {readonly unknown[]} 最新规则列表。
+   */
+  const liveDeny = () => {
+    const field = config === null || config === undefined
+      ? undefined
+      : (/** @type {{ deny?: unknown }} */ (config)).deny
+    const value = readConfigField(field)
+    return Array.isArray(value) ? value : []
   }
 
-  ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.installSection(ctx, SETTINGS_NAMESPACE, SettingsSection, { deny: resolved.deny }, {
-      setSource: (/** @type {() => RulesSection} */ current) => {
-        source = current
-        rebuild()
-      },
-      // 一次已提交的变更会改变已解析的段落，所以在这里重建编译后的匹配器，而不是留到
-      // 下一次工具调用。
-      onChange: () => {
-        rebuild()
-      },
-    })
+  /** 编译后的匹配器；每次提交变更后重建，工具调用读的就是它。 */
+  let rules = compile(liveDeny())
+
+  /**
+   * 记录当前生效的规则数量。屏蔽规则本身不写进日志，数量足够诊断。
+   * @returns {void}
+   */
+  const logRules = () => {
+    if (rules.length === 0) {
+      ctx.logger.info('file-shield: no rule configured yet; add paths on the plugin page or set config.deny')
+    } else {
+      ctx.logger.info(`file-shield: ${rules.length} rule(s) active`)
+    }
+  }
+
+  // 规则列表是 volatile 字段：Plugins 页面保存时 loader 只提交这个引用，不重启插件，
+  // 所以在这里重建匹配器，让新规则对下一次工具调用生效。
+  ctx.on('loader/volatile-update', () => {
+    rules = compile(liveDeny())
+    logRules()
   })
 
   /**
@@ -202,9 +201,5 @@ export function apply(ctx, config) {
     )
   })
 
-  if (rules.length === 0) {
-    ctx.logger.info('file-shield: no rule configured yet; add paths on the plugin page or set config.deny')
-  } else {
-    ctx.logger.info(`file-shield: ${rules.length} rule(s) active`)
-  }
+  logRules()
 }
