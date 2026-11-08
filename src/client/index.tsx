@@ -34,6 +34,7 @@ import css from './page.css'
 import { FileShieldPage, type FileShieldFace, type RulesSection } from './Page.tsx'
 import { LevelsPanel, type LevelsPanelFace } from './LevelsPanel.tsx'
 import { SessionShieldView, type SessionShieldFace } from './SessionShield.tsx'
+import { canPickFileWithSystemDialog, pickFileWithSystemDialog } from './pick.ts'
 import { NS, en, zh } from './locales.ts'
 
 /** 本包的名称，同时也是 Plugins 页面派发所用的 bundle 键。 */
@@ -100,6 +101,19 @@ function pickDirectoryOf(ctx: Context): (() => Promise<string | null>) | undefin
 }
 
 /**
+ * 系统文件对话框。
+ *
+ * 在桌面应用里可用（preload 的 `__DSH_HOST_PATHS__` 能把 `File` 换回真实路径），
+ * 纯浏览器里 `File` 不带路径、写不成规则，因此返回 undefined 让页面退回自带浏览器。
+ * 每次渲染时现判，而不是模块加载时判一次：桌面壳可能在页面已跑起来之后才注入那个桥。
+ *
+ * @returns 打开文件对话框的函数，或 undefined。
+ */
+function pickFileOf(): (() => Promise<string | null>) | undefined {
+  return canPickFileWithSystemDialog() ? pickFileWithSystemDialog : undefined
+}
+
+/**
  * 左侧面板列表里的盾牌图标。
  *
  * 面板行只借这个图标，标题与可访问名由注册项声明的 `label` 提供，
@@ -139,7 +153,7 @@ export function apply(ctx: Context): void {
     name: 'main',
     key: PANEL_ID,
     locale: NS,
-    inject: (): LevelsPanelFace => ({ pickDirectory: pickDirectoryOf(ctx) }),
+    inject: (): LevelsPanelFace => ({ pickDirectory: pickDirectoryOf(ctx), pickFile: pickFileOf() }),
   }, LevelsPanel))
 
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
@@ -159,6 +173,6 @@ export function apply(ctx: Context): void {
     order: 20,
     locale: NS,
     label: () => t('viewTab'),
-    inject: (sessionId): SessionShieldFace => ({ sessionId, pickDirectory: pickDirectoryOf(ctx) }),
+    inject: (sessionId): SessionShieldFace => ({ sessionId, pickDirectory: pickDirectoryOf(ctx), pickFile: pickFileOf() }),
   }, SessionShieldView))
 }

@@ -95,35 +95,6 @@
   color: var(--dsw-alias-label-caption, inherit);
 }
 
-.dfs-browser {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 45vh;
-  overflow-y: auto;
-}
-
-.dfs-crumbs {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dfs-crumbs .dfs-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dfs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
 .dfs-row {
   display: flex;
   align-items: center;
@@ -154,10 +125,6 @@
   white-space: nowrap;
 }
 
-.dfs-tag {
-  color: var(--dsw-alias-label-caption, inherit);
-  font-size: 11px;
-}
 /* ---- 左侧面板：三级配置窗口 ---- */
 
 /*

@@ -98,7 +98,7 @@ after(async () => {
 test('产物: host 半挂上三条路由', () => {
   assert.deepEqual(
     host.routes.map(route => route.path).sort(),
-    ['/file-shield/browse', '/file-shield/session', '/file-shield/state'],
+    ['/file-shield/session', '/file-shield/state'],
   )
 })
 
@@ -123,14 +123,14 @@ test('产物: POST 写入后从磁盘读回来是同一份，错误请求带稳�
   assert.equal(bad.body.error.code, 'not-absolute')
 })
 
-test('产物: 会话路由与浏览路由都在，且没有 agent 注册表时如实回答', async () => {
+test('产物: 会话路由在，且没有 agent 注册表时如实回答', async () => {
   const session = await http.get('/file-shield/session?session=s1')
   assert.equal(session.status, 200)
   assert.deepEqual(session.body, { cwd: null, workspace: null })
 
-  const browse = await http.get('/file-shield/browse')
-  assert.equal(browse.status, 200)
-  assert.ok(Array.isArray(browse.body.entries))
+  // 应用内浏览器已整体去掉：那条只读列目录的路由不该再被挂载。
+  const gone = await http.get('/file-shield/browse')
+  assert.equal(gone.status, 404, '浏览路由必须已被移除')
 })
 
 test('产物: 围栏拒绝时路由返状态码且不返回响应体', async () => {
@@ -139,7 +139,7 @@ test('产物: 围栏拒绝时路由返状态码且不返回响应体', async () 
   plugin.apply(fenced.ctx, { deny: [] })
   const fencedHttp = await serve(fenced.routes)
   try {
-    for (const path of ['/file-shield/state', '/file-shield/session?session=x', '/file-shield/browse']) {
+    for (const path of ['/file-shield/state', '/file-shield/session?session=x']) {
       const response = await fetch(fencedHttp.base + path)
       assert.equal(response.status, 403, path)
       assert.equal(await response.text(), '', path)

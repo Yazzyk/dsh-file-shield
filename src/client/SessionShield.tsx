@@ -27,6 +27,8 @@ export interface SessionShieldFace {
   sessionId: string
   /** 系统目录选择器；没有 workspace UI 时为 undefined，编辑器会退回自带浏览器。 */
   pickDirectory: (() => Promise<string | null>) | undefined
+  /** 系统文件对话框；纯浏览器拿不到真实路径时为 undefined。 */
+  pickFile: (() => Promise<string | null>) | undefined
 }
 
 /** 完整的组件 props：运行时份额、locale 座位，以及注入的业务面。 */
@@ -45,7 +47,7 @@ export type SessionShieldProps =
  * @returns 会话工作区、会话 id、规则编辑器与保存栏。
  */
 export function SessionShieldView(props: SessionShieldProps) {
-  const { t, sessionId, pickDirectory } = props
+  const { t, sessionId, pickDirectory, pickFile } = props
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [rules, setRules] = useState<readonly string[]>([])
   const [cwd, setCwd] = useState<string | null>(null)
@@ -114,7 +116,7 @@ export function SessionShieldView(props: SessionShieldProps) {
           </div>
         )
         : null}
-      {status === 'ready' ? <RuleEditor t={t} rules={rules} writable pickDirectory={pickDirectory} onSave={save} /> : null}
+      {status === 'ready' ? <RuleEditor t={t} rules={rules} writable pickDirectory={pickDirectory} pickFile={pickFile} onSave={save} /> : null}
     </div>
   )
 }

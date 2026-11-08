@@ -25,7 +25,7 @@
 | 规则持久化与实时生效 | 行 config 的 volatile `deny`（host）+ `ctx.configForms.get('file-shield')`（client） | 只有 volatile 字段能由 Plugins 页面编辑，且 loader 用「写引用 + `loader/volatile-update`」提交，不重启插件 |
 | 插件页面 | `plugins.bundle.config` 键控槽，键 = 包名 | 渲染在 Plugins 页该插件卡片自己的页面上（`packages/client/ui-plugin-manager/src/client/slot-contract.ts:33-38`） |
 | 选目录 | `ctx.uiWorkspace.pickDirectory()` | 直接返回所选绝对路径，官方选择器（`packages/client/ui-workspace/src/client/navigation.ts:64-66`） |
-| 选文件 | 插件自建只读浏览路由 | 现有 `listDirectory` 只列目录，没有文件选择器（`packages/host/directory-picker/src/types.ts:21-39`） |
+| 选文件 | 系统文件对话框 + preload 真实路径桥 | `pickDirectory()` 只返回目录；`<input type="file">` 只给 `File`，靠桌面壳的 `__DSH_HOST_PATHS__.pathFor` 换回路径 |
 
 被否决的方案：
 
@@ -54,13 +54,14 @@ dsh-file-shield/
     commands.js         # 从 shell 命令文本提取候选路径
     guard.js            # tools/pre-execute 决策
     results.js          # tools/post-execute 结果过滤
-    browse.js           # GET /file-shield/browse 路由
+    tiers.js / tier-store.js / tier-routes.js   # 三级规则的状态、持久化、路由
     guidance.js         # 可选系统提示段
   src/client/
     index.tsx           # 槽注册
     Page.tsx            # 规则列表 + 保存/重置
-    Browser.tsx         # 文件浏览器对话框
-    api.ts              # 浏览路由的 fetch 封装
+    LevelsPanel.tsx     # 侧边栏面板：三级规则
+    SessionShield.tsx   # 会话的「屏蔽」标签页
+    pick.ts             # 系统文件对话框 + 真实路径桥探测
     locales.ts          # 本地字典
     page.css            # 样式（构建期内联）
   lib/
@@ -114,7 +115,7 @@ Host 是纯 ESM JavaScript（JSDoc 类型 + `node --test`），client 是 TSX �
 
 - 规则字符串含 glob 元字符（`*?[]{}`）时按 glob 编译，否则按精确路径比较。
 - 相对规则锚定到会话工作区 `exec.agent.session.header.cwd`；无 agent 时退回 provider 默认（即不传 `cwd`，由 `ctx.fs.resolve` 自行决定）。
-- 每个目标按**两种拼法**参与匹配：`ctx.fs.resolve(候选路径, { cwd, signal })` 返回的 `FsTarget` 同时给出 `targetKey`（规范化身份，符号链接已解析）与 `displayPath`（调用方写下的绝对路径，链接保持原样），两者都拿来匹配。原因：macOS 的 `/tmp`、`/var` 是指向 `/private/...` 的符号链接，规则可能写成任一种，而文件浏览器给出的正是 display 拼法；只比规范化身份会让页面里选出的 `/tmp/...` 静默不生效。别名的防护不受影响——针对真实路径写的规则仍经 `targetKey` 命中。
+- 每个目标按**两种拼法**参与匹配：`ctx.fs.resolve(候选路径, { cwd, signal })` 返回的 `FsTarget` 同时给出 `targetKey`（规范化身份，符号链接已解析）与 `displayPath`（调用方写下的绝对路径，链接保持原样），两者都拿来匹配。原因：macOS 的 `/tmp`、`/var` 是指向 `/private/...` 的符号链接，规则可能写成任一种，而系统对话框给出的正是 display 拼法；只比规范化身份会让选出的 `/tmp/...` 静默不生效。别名的防护不受影响——针对真实路径写的规则仍经 `targetKey` 命中。
 - 内置 glob 编译支持 `**`（可匹配零层目录）、`*`、`?`、`[...]`；反斜杠转义下一个字符，因此路径中真实存在的 `*` 或 `[` 可以写成 `\*`、`\[`。自实现，不引第三方依赖。
 - 空串与纯空白规则被忽略。
 - `~` 前缀在规则中展开为宿主 home（仅限规则侧，模型输入不做展开）。
@@ -170,22 +171,20 @@ registry 会把它物化成 `Error: <reason>` 的失败结果，并保留结构�
 
 `guidance: true` 时注册一段提示（`order: 50`、`interpolate: false`）：说明部分路径受部署策略保护、被拒绝是策略而非故障、不要改用 shell 或其它工具绕过、也不要猜测被隐藏的内容。提示中不罗列具体路径。
 
-## 7. 浏览路由
+## 7. 选目录与选文件
 
-Host 侧注册一条只读路由（`ctx.effect(() => ctx.webServer.register(...))`）：
+两条选择路径，都不由本插件自己画对话框：
 
-```
-GET /file-shield/browse?path=<绝对路径>
-```
+| 选择 | 走哪条 | 依据 |
+|---|---|---|
+| 目录 | `ctx.uiWorkspace.pickDirectory()` | dsh 的 directory-picker 接缝；桌面壳开本机对话框，普通 Web 由 Host 端后端应答 |
+| 文件 | `<input type="file">` + preload 的 `__DSH_HOST_PATHS__.pathFor(file)` | 浏览器只给 `File` 对象、不给路径；`electron.webUtils.getPathForFile` 才有真实路径，dsh 自己的输入框接文件引用走的同一条桥 |
 
-- 无 `path` 时列宿主 home。
-- `200` 应答：`{ path, parent: string|null, home, entries: [{ name, type: 'file'|'directory'|'other', symlink }], truncated: boolean }`，条目按目录优先、同类按名字排序，超过 5000 条截断并置 `truncated`。符号链接报告它解析后的类型并带 `symlink: true`。
-- `Cache-Control: no-store`；仅接受 `GET`，其它方法 `405`。
-- 失败应答：`400`（路径缺失/非绝对/解码失败）、`404`（不存在）、`403`（权限拒绝）、`500`（其它 IO 失败），体为 `{ error: { code, message } }`。
-- 使用 `lstat`，符号链接如实报告且不作为可进入项，避免环。
-- 信任边界：每个请求先过 `ctx.connection.requestRejection()`——Host/Origin 围栏挡 DNS rebinding 与跨站请求，浏览器会话 Cookie 挡未认证调用；被拒时按围栏给的状态（`401`/`403`）回空体，不泄露任何目录信息。路由本身只读、无副作用、无路径写入能力、只列目录内容；绑定沿用 webServer 自身配置（默认回环）。这是本插件唯一的自建 HTTP 面。
+**没有应用内浏览器**：早先的版本自带一个只读目录对话框（`GET /file-shield/browse` + `Browser.tsx`），现已整体移除。理由是"同一个动作只该有一个界面"——两个选择器并存时用户要先猜"这次会弹哪一个"，而系统对话框在桌面里已经够用。文件路径的桥不在时（纯浏览器），"选择文件…"按钮不出现，而不是换一个降级界面顶上。
 
-Host 侧注入 `webServer` **与** `connection` 为**可选**：两者都在时挂载浏览路由，缺任一时路由不挂载（宁可让文件浏览器不可用，也不开一条无认证的目录列举），守卫本身不受影响。
+移除也缩小了暴露面：插件现在只挂 `/file-shield/state` 与 `/file-shield/session` 两条路由，不再有任何列目录的 HTTP 面。
+
+Host 侧注入 `webServer` **与** `connection` 为**可选**：两者都在时挂这两条路由，缺任一时不挂（宁可让面板不可用，也不开无认证入口），守卫本身不受影响。
 
 ## 8. GUI 页面
 
@@ -199,7 +198,7 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 - `view: 'page'`：
   - 规则列表：每条显示路径与删除按钮，glob 规则额外带一个标签（客户端无法可靠区分「文件」与「目录」，所以不做这个区分）；
   - **添加目录**：`uiWorkspace.pickDirectory()`；
-  - **添加文件**：打开自带浏览器对话框，从宿主 home 开始逐层进入目录、点选文件；
+  - **添加文件**：打开系统文件对话框（见 §7）；
   - **手动输入**：一个文本框用于粘贴路径或 glob；
   - **保存**：`form.set('deny', [...])`；
   - **恢复部署默认**：`form.unset('deny')`。
@@ -220,7 +219,7 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 
 会话的「屏蔽」标签页**默认锚在当前会话上**，所以那里只管会话级规则；全局与项目级在侧边栏面板里，两处共用同一份状态与同一个保存路径。分开的理由不是权限，是心流：改会话级规则时人不该还要在面板里再挑一次"哪个会话"。
 
-为什么是标签页而不是会话头部的图标按钮：会话级规则是"这一整段会话怎么被对待"，与对话、轨迹属于同一个层级；用户找它的心智位置就在那排标签里，而不是某个需要先发现的按钮。标签页还顺带解决了空间——规则列表、文件浏览器、保存结论都需要高度。
+为什么是标签页而不是会话头部的图标按钮：会话级规则是"这一整段会话怎么被对待"，与对话、轨迹属于同一个层级；用户找它的心智位置就在那排标签里，而不是某个需要先发现的按钮。标签页还顺带解决了空间——规则列表与保存结论都需要高度。
 
 面板的数据面是三条插件路由（§7 同款信任围栏，缺 `connection` 时整组不挂载）：
 
@@ -255,7 +254,7 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
    - deny 决策的完整字段；
    - `grep`/`glob` 结果过滤，含全部被过滤与空结果；
    - 配置校验：字段类型错误报错、`deny` 省略合法；
-   - 浏览路由：正常列表、非 GET、非绝对路径、不存在、条目上限。
+   - 三级规则：状态语义、持久化降级、路由错误码、按调用解析、workspace 归属。
 2. **真实组合**：全新临时 `DSH_HOME` 建 scratch profile → `dsh plugin --profile <scratch> add link:/Users/yazzyk/workspace/dsh-file-shield` → `--dump-config` 断言插件行出现且 bundle 层正确 → 有可用 key 时跑真实任务读被屏蔽文件，断言模型收到策略拒绝。
 3. **安装与 GUI**：装到 `desktop` 与 `web`；用浏览器自动化打开 `http://127.0.0.1:43120`，进入 Plugins 页打开本插件页面，实际点选目录与文件、保存，再让 agent 读取被屏蔽文件并确认被拒。
 4. 若 `plugins.bundle.config` 在已发布构建中对第三方 bundle 不渲染，改用 `plugins.row.config`（键 `dsh-file-shield#file-shield`），并同步修订本文档。

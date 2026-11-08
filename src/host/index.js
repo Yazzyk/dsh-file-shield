@@ -18,13 +18,12 @@
  *
  * 本插件不拥有任何 service。它注册一个 pre-execute 决策、一个 post-execute 结果
  * 过滤器、一个可选的系统提示段落，以及——只在同时装配了 web server 与 connection
- * 信任围栏时——面板所需的三条路由：只读目录浏览、三级规则读写、会话工作区查询。
+ * 信任围栏时——面板所需的两条路由：三级规则读写、会话工作区查询。
  *
  * @module dsh-file-shield
  */
 
 import z from '@deepseek-ai/schemastery'
-import { BROWSE_PATH, createBrowseHandler } from './browse.js'
 import { readConfigField, resolveConfig } from './config.js'
 import { createPreExecuteListener } from './guard.js'
 import { createLiveRules } from './live.js'
@@ -287,21 +286,12 @@ export function apply(ctx, config) {
     })
   }
 
-  // 这三条路由分别会列目录、读写规则、回答会话工作区，都是暴露宿主信息的面，因此只在组合的
+  // 这两条路由会读写规则、回答会话工作区，都是暴露宿主信息的面，因此只在组合的
   // connection 信任围栏可用、能对它把关时才挂载；没有该围栏时面板保持不可用，而不是开放
   // 未认证的读写入口。
   ctx.inject(['webServer', 'connection'], (webCtx) => {
     /** @param {{ readonly headers: import('node:http').IncomingMessage['headers'] }} request */
     const authorize = request => connectionOf(webCtx).requestRejection(request)
-
-    webCtx.effect(
-      () => webCtx.webServer.register({
-        kind: 'exact',
-        path: BROWSE_PATH,
-        handler: createBrowseHandler({ authorize }),
-      }),
-      'file-shield browse route',
-    )
 
     webCtx.effect(
       () => webCtx.webServer.register({
