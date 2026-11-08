@@ -159,6 +159,6 @@ export function apply(ctx: Context): void {
     order: 20,
     locale: NS,
     label: () => t('viewTab'),
-    inject: (sessionId): SessionShieldFace => ({ sessionId }),
+    inject: (sessionId): SessionShieldFace => ({ sessionId, pickDirectory: pickDirectoryOf(ctx) }),
   }, SessionShieldView))
 }

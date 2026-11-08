@@ -47,6 +47,11 @@ export interface RuleEditorProps {
   rules: readonly string[]
   /** 是否允许编辑；状态路由不返回写能力，调用方传 true，拒绝由保存结论呈现。 */
   writable: boolean
+  /**
+   * 系统目录选择器。有它就先走它——那是使用者自己机器上的文件对话框，
+   * 比插件自带的只读浏览器快得多；没有（远程浏览器、无 workspace UI）才退回自带浏览器。
+   */
+  pickDirectory?: (() => Promise<string | null>) | undefined
   /** 把这组规则写到该层；返回宿主的拒绝码，成功时为 undefined。 */
   onSave: (rules: string[]) => Promise<SaveOutcome>
 }
@@ -63,7 +68,7 @@ export interface RuleEditorProps {
  * @param props.onSave - 写入该层。
  * @returns 规则列表、增删按钮与保存栏。
  */
-export function RuleEditor({ t, rules, writable, onSave }: RuleEditorProps) {
+export function RuleEditor({ t, rules, writable, pickDirectory, onSave }: RuleEditorProps) {
   /** 暂存列表；`null` 表示"未编辑"，此时显示该层的当前规则。 */
   const [staged, setStaged] = useState<string[] | null>(null)
   const [browsing, setBrowsing] = useState(false)
@@ -128,7 +133,29 @@ export function RuleEditor({ t, rules, writable, onSave }: RuleEditorProps) {
         )}
 
       <div className="dfs-buttons">
-        <Button variant="outline" disabled={!writable} onClick={() => { setBrowsing(true) }}>{t('addFile')}</Button>
+        {/* 系统选择器只给目录：它是最熟的那条路，而写一条目录规则就等于屏蔽整棵子树。 */}
+        {pickDirectory === undefined ? null : (
+          <Button
+            variant="outline"
+            disabled={!writable}
+            onClick={() => {
+              void pickDirectory().then((picked) => { if (typeof picked === 'string') add(picked) })
+            }}
+          >
+            {t('pickSystemDirectory')}
+          </Button>
+        )}
+        {/*
+          选**具体文件**只能走应用内浏览器：系统对话框只返回目录，没有"选一个文件"这一档。
+          两个按钮都留着才是诚实的——屏蔽一个 .env 和屏蔽整个目录是两种真实需求。
+        */}
+        <Button
+          variant={pickDirectory === undefined ? 'outline' : 'ghost'}
+          disabled={!writable}
+          onClick={() => { setBrowsing(true) }}
+        >
+          {t('addFile')}
+        </Button>
       </div>
 
       <div className="dfs-actions">
@@ -315,6 +342,7 @@ export function LevelsPanel(props: LevelsPanelProps) {
           t={t}
           rules={state.levels.global}
           writable
+          pickDirectory={pickDirectory}
           onSave={(rules) => write({ scope: 'global', rules })}
         />
       </section>
@@ -374,6 +402,7 @@ export function LevelsPanel(props: LevelsPanelProps) {
                   t={t}
                   rules={rules}
                   writable
+                  pickDirectory={pickDirectory}
                   onSave={(next) => write({ scope: 'project', workspace, rules: next })}
                 />
               )
@@ -391,6 +420,7 @@ export function LevelsPanel(props: LevelsPanelProps) {
               t={t}
               rules={[]}
               writable
+              pickDirectory={pickDirectory}
               onSave={async (next) => {
                 const outcome = await write({ scope: 'project', workspace: extra, rules: next })
                 // 目录一旦在服务端有自己的条目，就交给上面的列表显示，
@@ -403,16 +433,25 @@ export function LevelsPanel(props: LevelsPanelProps) {
         )}
 
         <div className="dfs-buttons">
-          {/* 手动入口保留：dsh 里没有登记的工作区（脚本目录、临时目录）也要能加。 */}
-          <Button variant="outline" onClick={() => { setBrowsing(true) }}>{t('projectAdd')}</Button>
+          {/*
+            项目层的键必须是目录，所以主入口就是系统选择器；应用内浏览是它在远程浏览器 /
+            没有 workspace UI 时的替身（那时拿不到本机对话框）。
+          */}
+          {pickDirectory === undefined ? null : (
+            <Button
+              variant="outline"
+              onClick={() => {
+                void pickDirectory().then((picked) => { if (typeof picked === 'string') pickProject(picked) })
+              }}
+            >
+              {t('addSystemDirectory')}
+            </Button>
+          )}
           <Button
-            variant="outline"
-            disabled={pickDirectory === undefined}
-            onClick={() => {
-              void pickDirectory?.().then((picked) => { if (typeof picked === 'string') pickProject(picked) })
-            }}
+            variant={pickDirectory === undefined ? 'outline' : 'ghost'}
+            onClick={() => { setBrowsing(true) }}
           >
-            {t('addSystemDirectory')}
+            {t('projectAdd')}
           </Button>
         </div>
       </section>

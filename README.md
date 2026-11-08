@@ -123,10 +123,12 @@ dsh plugin --profile <profile> remove dsh-file-shield
 ### 三级屏蔽（全局 / 项目 / 会话）
 
 - **全局**：对任何会话的任何工具调用都生效。放"这个人的机器上永远不该被读"的东西。
-- **项目**：对 **dsh 工作区里的某个项目**生效。键是 dsh Workspace 的路径（dsh 自己规范化过的那一个），面板直接列出本宿主已有的工作区让你挑，也可以手动加一个没登记的目录。判定会话属于哪个项目时以 **dsh 的 Workspace 记录**为准：workspace 的 path 是规范化的根，而会话的 cwd 可能只是它下面某个子目录；dsh 没记录这个会话时才按 cwd 前缀回退。嵌套的项目根会同时命中，规则累加。
+- **项目**：对 **dsh 工作区里的某个项目**生效。键是 dsh Workspace 的路径（dsh 自己规范化过的那一个），面板直接列出本宿主已有的工作区让你挑；要加一个没登记的目录时，用**系统目录对话框**（或应用内浏览）选。判定会话属于哪个项目时以 **dsh 的 Workspace 记录**为准：workspace 的 path 是规范化的根，而会话的 cwd 可能只是它下面某个子目录；dsh 没记录这个会话时才按 cwd 前缀回退。嵌套的项目根会同时命中，规则累加。
 - **会话**：只在这一次会话里生效，键是会话 id。适合"临时打开又不想被这个 agent 读到"的东西。
 
 全局与项目两级从**侧边栏面板**维护（侧边栏的盾牌图标）；会话级在**会话的「屏蔽」标签页**里——它与「对话」「轨迹」是同一排标签，默认就锚在当前会话上，不用再选。面板里的会话段只做汇总与指路。
+
+三级都用同一套编辑手势：**选择目录…** 走操作系统对话框（主路径），**选择文件…** 走应用内浏览器（屏蔽单个文件时用）。
 
 数据面是三条插件自己的路由，都先过组合的 `connection` 信任围栏（Host/Origin 挡 DNS rebinding 与跨站，浏览器会话 Cookie 挡未认证调用），且只在同时装配了 `webServer` 与 `connection` 时挂载：
 
@@ -143,14 +145,14 @@ dsh plugin --profile <profile> remove dsh-file-shield
 
 侧边栏 **Plugins** → **Installed** → `dsh-file-shield`：
 
-- **选择文件…** 打开插件自带的浏览器，逐层进入目录并点选文件；
-- **系统目录选择器…** 调用 dsh 自己的目录选择器（需要装载 workspace UI）；
+- **选择目录…** 打开**操作系统自己的目录对话框**（dsh 的 `uiWorkspace.pickDirectory()`，本机 Electron 走 preload 桥，普通 Web 走 Host 端选择器）。写一条目录规则就等于屏蔽整棵子树，所以这是主路径。
+- **选择文件…** 打开插件自带的浏览器，逐层进入目录并点选**具体文件**。系统对话框只返回目录，没有"选一个文件"这一档，所以屏蔽单个 `.env` 这类需求必须走这条。系统选择器不可用时（远程浏览器、没装 workspace UI）它也是唯一的入口。
 - 也可以直接输入路径或 glob；
 - **保存** 把规则写进 profile patch 里本行的 `config.deny`（用户层），**恢复部署默认** 清掉用户层。
 
 `deny` 是宿主 schema 里的 **volatile 字段**：保存只让 loader 更新它持有的配置引用，插件不重启，新规则对下一次工具调用立即生效。页面的数据面是宿主 settings 服务为 `file-shield` 这一行投影出的配置表单（`ctx.configForms`，行 id 就是本 bundle patch 声明的那个）；部署里没有这个服务时页面只显示「不可用」，不会把插件激活一起拖住。
 
-因为宿主没有暴露列文件的接口（目录选择器只列目录、`workspaceFiles.list` 限于会话工作区），选文件用的是一条插件自己的只读路由 `GET /file-shield/browse?path=<绝对路径>`：只接受 GET、只列目录内容、`Cache-Control: no-store`，并且每个请求都先过 `ctx.connection.requestRejection()`——Host/Origin 围栏挡 DNS rebinding 与跨站请求，浏览器会话 Cookie 挡未认证调用。该路由只在同时装配了 `webServer` 与 `connection` 的组合里挂载；缺其中任一时文件浏览器不可用，而不是以无认证方式开放目录列举。
+因为宿主没有暴露列**文件**的接口（`pickDirectory` 只返回目录、`workspaceFiles.list` 限于会话工作区），选文件用的是一条插件自己的只读路由 `GET /file-shield/browse?path=<绝对路径>`：只接受 GET、只列目录内容、`Cache-Control: no-store`，并且每个请求都先过 `ctx.connection.requestRejection()`——Host/Origin 围栏挡 DNS rebinding 与跨站请求，浏览器会话 Cookie 挡未认证调用。该路由只在同时装配了 `webServer` 与 `connection` 的组合里挂载；缺其中任一时文件浏览器不可用，而不是以无认证方式开放目录列举。
 
 ### 从 `cordis.patch.yml`（部署默认）
 
