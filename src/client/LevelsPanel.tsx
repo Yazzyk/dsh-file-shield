@@ -153,8 +153,9 @@ export function RuleEditor({ t, rules, writable, pickDirectory, pickFile, onSave
           </Button>
         )}
         {/*
-          系统文件对话框只在桌面应用里拿得到真实路径（纯浏览器里 File 不带路径），所以
-          它缺席时这个按钮就是"打开应用内浏览器"，而不是消失——那是远程部署里唯一的路。
+          选文件只有一个入口：桌面应用里是系统文件对话框；纯浏览器拿不到 File 的真实路径
+          （没有 preload 的 __DSH_HOST_PATHS__），同一个按钮原地变成应用内浏览器。
+          两个按钮并排会让"选文件"看起来有两件不同的事，而它们作用完全相同。
         */}
         <Button
           variant={pickDirectory === undefined && pickFile === undefined ? 'outline' : 'ghost'}
@@ -169,10 +170,6 @@ export function RuleEditor({ t, rules, writable, pickDirectory, pickFile, onSave
         >
           {pickFile === undefined ? t('addFile') : t('pickSystemFile')}
         </Button>
-        {/* 桌面里也留一扇"应用内浏览"的门：需要逐层看清目录结构时它更快。 */}
-        {pickFile === undefined ? null : (
-          <Button variant="ghost" disabled={!writable} onClick={() => { setBrowsing(true) }}>{t('addFile')}</Button>
-        )}
       </div>
 
       <div className="dfs-actions">
