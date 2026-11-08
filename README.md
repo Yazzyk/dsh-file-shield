@@ -128,7 +128,7 @@ dsh plugin --profile <profile> remove dsh-file-shield
 
 全局与项目两级从**侧边栏面板**维护（侧边栏的盾牌图标）；会话级在**会话的「屏蔽」标签页**里——它与「对话」「轨迹」是同一排标签，默认就锚在当前会话上，不用再选。面板里的会话段只做汇总与指路。
 
-三级都用同一套编辑手势：**选择目录…** 走操作系统对话框（主路径），**选择文件…** 走应用内浏览器（屏蔽单个文件时用）。
+三级都用同一套编辑手势：**选择目录…** 与 **选择文件…** 都走操作系统对话框（桌面应用）；拿不到真实路径的环境里，选文件自动退化成应用内浏览器，选目录退化成"没这个按钮"。
 
 数据面是三条插件自己的路由，都先过组合的 `connection` 信任围栏（Host/Origin 挡 DNS rebinding 与跨站，浏览器会话 Cookie 挡未认证调用），且只在同时装配了 `webServer` 与 `connection` 时挂载：
 
@@ -145,8 +145,9 @@ dsh plugin --profile <profile> remove dsh-file-shield
 
 侧边栏 **Plugins** → **Installed** → `dsh-file-shield`：
 
-- **选择目录…** 打开**操作系统自己的目录对话框**（dsh 的 `uiWorkspace.pickDirectory()`，本机 Electron 走 preload 桥，普通 Web 走 Host 端选择器）。写一条目录规则就等于屏蔽整棵子树，所以这是主路径。
-- **选择文件…** 打开插件自带的浏览器，逐层进入目录并点选**具体文件**。系统对话框只返回目录，没有"选一个文件"这一档，所以屏蔽单个 `.env` 这类需求必须走这条。系统选择器不可用时（远程浏览器、没装 workspace UI）它也是唯一的入口。
+- **选择目录…** 打开**操作系统自己的文件夹对话框**（dsh 的 `uiWorkspace.pickDirectory()`；桌面应用走 preload 桥，普通 Web 走 Host 端选择器）。写一条目录规则就等于屏蔽整棵子树。
+- **选择文件…** 同样打开**操作系统自己的文件对话框**。它开的是 `<input type="file">`，浏览器只给 `File` 对象、不给路径；桌面应用因此用 preload 的 `__DSH_HOST_PATHS__.pathFor(file)`（`electron.webUtils.getPathForFile`）把 `File` 换回真实路径——dsh 自己的输入框接文件引用走的也是这条桥。**这条能力只在桌面应用里有**，纯浏览器拿不到路径就写不成规则。
+- **（纯浏览器 / 远程部署）** 上面那条自动退化成**应用内浏览器**：逐层进入目录并点选文件，走插件自己的只读 `browse` 路由。
 - 也可以直接输入路径或 glob；
 - **保存** 把规则写进 profile patch 里本行的 `config.deny`（用户层），**恢复部署默认** 清掉用户层。
 

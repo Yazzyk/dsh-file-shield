@@ -29,6 +29,7 @@ export type FileShieldKey =
   | 'addDirectory'
   | 'addSystemDirectory'
   | 'pickSystemDirectory'
+  | 'pickSystemFile'
   | 'manualPlaceholder'
   | 'manualAdd'
   | 'remove'
@@ -92,6 +93,7 @@ export const zh: Record<FileShieldKey, string> = {
   addDirectory: '选择目录…',
   addSystemDirectory: '系统目录选择器…',
   pickSystemDirectory: '选择目录…',
+  pickSystemFile: '选择文件…',
   manualPlaceholder: '输入路径或 glob，例如 **/.env',
   manualAdd: '添加',
   remove: '移除',
@@ -156,6 +158,7 @@ export const en: Record<FileShieldKey, string> = {
   addDirectory: 'Pick a directory…',
   addSystemDirectory: 'System directory picker…',
   pickSystemDirectory: 'Pick a directory…',
+  pickSystemFile: 'Pick a file…',
   manualPlaceholder: 'Path or glob, for example **/.env',
   manualAdd: 'Add',
   remove: 'Remove',
