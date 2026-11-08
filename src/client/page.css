@@ -75,6 +75,14 @@
   min-width: 0;
 }
 
+/* 只放按钮的一行不拉宽第一个按钮：这里没有需要占满宽度的输入框。 */
+.dfs-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .dfs-foot {
   display: flex;
   align-items: center;
@@ -149,4 +157,100 @@
 .dfs-tag {
   color: var(--dsw-alias-label-caption, inherit);
   font-size: 11px;
+}
+/* ---- 左侧面板：三级配置窗口 ---- */
+
+/*
+ * 主区座位自己撑满并滚动：官方页面也是这么做的（父级不提供滚动容器），
+ * 否则长列表会顶出面板之外。
+ */
+.dfs-panel {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 16px clamp(16px, 3vw, 28px) 32px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, inherit);
+  overflow-y: auto;
+}
+
+/* 内容列宽上限，宽屏下不把规则行拉成一整条。 */
+.dfs-panel > * {
+  width: 100%;
+  max-width: 880px;
+}
+
+.dfs-panelHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+
+.dfs-panelTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, inherit);
+}
+
+/* 一级规则段：底色分层而不是画重边框，深浅色都跟着主题走。 */
+.dfs-level {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--dsw-alias-border-l2, transparent);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1, transparent);
+}
+
+.dfs-levelRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, transparent);
+  border-radius: 8px;
+}
+
+.dfs-row-static {
+  cursor: default;
+}
+
+.dfs-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 项目 / 会话行里的路径要吃掉剩余宽度，按钮才不会被挤走。 */
+.dfs-path-grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dfs-hint {
+  color: var(--dsw-alias-label-caption, inherit);
+  font-size: 11px;
+}
+
+/* ---- 会话头部盾牌按钮的对话框 ---- */
+
+.dfs-dialogBody {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.dfs-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, inherit);
 }

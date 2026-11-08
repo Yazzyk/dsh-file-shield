@@ -1,13 +1,17 @@
 /**
- * File Shield 的浏览器端：本 bundle 的 Plugins 页面上的规则编辑器。
+ * File Shield 的浏览器端：Plugins 卡片上的规则页、左侧面板里的三级配置窗口，
+ * 以及会话顶部的会话级盾牌按钮。
  *
- * 页面以本包名注册进 `plugins.bundle.config`，
- * 这使页面出现在该 bundle 自己的卡片上。
+ * 三个入口共用同一份字典与本包的样式表：字典在 fiber 上注册一次，
+ * 样式表注入一次并打上插件 id 标记，模块运行时据此认领与移除。
  *
- * 页面的数据面是宿主 settings 服务为「本插件行」投影出的配置表单：行的 id 就是本 bundle
- * patch 声明的 `file-shield`，表单里的 `deny` 字段是宿主 schema 标成 volatile 的那一个。
- * 这个服务按机会性依赖读取：始终缺席只会让页面显示「不可用」，不会让本插件的 fiber
- * 一直等下去。
+ * Plugins 页面的数据面是宿主 settings 服务为「本插件行」投影出的配置表单：
+ * 行的 id 就是本 bundle patch 声明的 `file-shield`，表单里的 `deny` 字段是
+ * 宿主 schema 标成 volatile 的那一个。这个服务按机会性依赖读取：始终缺席只会
+ * 让页面显示「不可用」，不会让本插件的 fiber 一直等下去。
+ *
+ * 三级配置窗口与会话盾牌按钮走插件自己的状态路由（见 `state.ts`），
+ * 与 settings 表单无关：它们是两张不同的写入口，但读的是同一份生效规则。
  *
  * @module dsh-file-shield/src/client
  */
@@ -20,9 +24,16 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
+// 仅类型：声明 'main' 与 'conversation.session.header.utilities' 两个座位。
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
+import { IconShieldOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './page.css'
 import { FileShieldPage, type FileShieldFace, type RulesSection } from './Page.tsx'
+import { LevelsPanel, type LevelsPanelFace } from './LevelsPanel.tsx'
+import { SessionShieldAction } from './SessionShield.tsx'
 import { NS, en, zh } from './locales.ts'
 
 /** 本包的名称，同时也是 Plugins 页面派发所用的 bundle 键。 */
@@ -35,6 +46,14 @@ const BUNDLE = 'dsh-file-shield'
  * `id`，与官方插件（`locale`、`ui-conversation` 等）硬编码自己的行 id 是同一约定。
  */
 const ENTRY_ID = 'file-shield'
+
+/**
+ * 左侧面板入口与它打开的主区页面共用的 id。
+ *
+ * 清单必须成对：`sidebar.panellist` 的 id 决定点哪一行，
+ * `main` 的 key 决定那一行渲染谁；两者不同就会点出一个空面板。
+ */
+const PANEL_ID = 'file-shield'
 
 /** 本插件等待的浏览器端服务。settings 按机会性依赖读取，因此不在这个列表里。 */
 export const inject = ['slots', 'locale']
@@ -81,13 +100,28 @@ function pickDirectoryOf(ctx: Context): (() => Promise<string | null>) | undefin
 }
 
 /**
- * 注册页面。
+ * 左侧面板列表里的盾牌图标。
+ *
+ * 面板行只借这个图标，标题与可访问名由注册项声明的 `label` 提供，
+ * 因此这里不需要翻译。
+ *
+ * @param props.size - 面板行要求的方形边长。
+ * @returns 与面板行同色的盾牌图标。
+ */
+function ShieldPanelIcon({ size }: { size: number }) {
+  return <IconShieldOutlineRegular size={size} />
+}
+
+/**
+ * 注册页面与两个新增入口。
  *
  * @param ctx - 浏览器端插件上下文。
  */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'file-shield dictionaries')
   ctx.effect(() => injectStyles(), 'file-shield styles')
+  // 面板行的 label 是读时才求值的 thunk，绑一次就能跟上语言切换。
+  const t = ctx.locale.bind(NS)
 
   ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
     name: 'plugins.bundle.config',
@@ -98,4 +132,29 @@ export function apply(ctx: Context): void {
       pickDirectory: pickDirectoryOf(ctx),
     }),
   }, FileShieldPage))
+
+  // 面板入口：主区页面与会话头部按钮都是 root/session 作用域，
+  // 都不需要本插件自己声明子座位。
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: PANEL_ID,
+    locale: NS,
+    inject: (): LevelsPanelFace => ({ pickDirectory: pickDirectoryOf(ctx) }),
+  }, LevelsPanel))
+
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: PANEL_ID,
+    order: 30,
+    locale: NS,
+    label: () => t('panel'),
+  }, ShieldPanelIcon))
+
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'file-shield-session',
+    order: 5,
+    locale: NS,
+    inject: (sessionId) => ({ sessionId }),
+  }, SessionShieldAction))
 }

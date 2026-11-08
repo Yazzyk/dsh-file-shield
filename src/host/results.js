@@ -95,7 +95,8 @@ async function spellingsAt(requested, root, resolveTarget, cache, signal) {
 
 /**
  * @typedef {object} ResultFilterOptions
- * @property {() => import('./rules.js').Rule[]} activeRules - 当前已编译的规则。
+ * @property {(exec?: any) => import('./rules.js').Rule[]} activeRules - 当前已编译的规则。
+ *   接收调用本身：规则的生效范围（哪个项目、哪个会话）就是调用的一部分，见 `live.js`。
  * @property {ResolveTarget} resolveTarget - 规范化一个已报告的路径。
  * @property {{ debug: (message: string) => void }} [logger] - 诊断输出。
  */
@@ -116,7 +117,7 @@ export function createPostExecuteListener(options) {
     // 渲染结果。
     if (Object.hasOwn(decision, 'content')) return decision
 
-    const rules = activeRules()
+    const rules = activeRules(exec)
     if (rules.length === 0) return decision
     const value = Object.hasOwn(decision, 'value') ? decision.value : (result.isError ? undefined : result.value)
     if (typeof value !== 'object' || value === null) return decision

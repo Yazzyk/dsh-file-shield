@@ -19,6 +19,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** 本页面渲染的全部文本。 */
 export type FileShieldKey =
   | 'title'
+  | 'panel'
+  | 'panelIntro'
   | 'summaryNone'
   | 'summaryCount'
   | 'rulesHeading'
@@ -36,9 +38,36 @@ export type FileShieldKey =
   | 'saved'
   | 'saveFailed'
   | 'reset'
+  | 'discard'
+  | 'expand'
+  | 'collapse'
+  | 'retry'
   | 'loading'
+  | 'loadFailed'
   | 'unavailable'
   | 'readOnly'
+  | 'readOnlyShort'
+  | 'deploymentHeading'
+  | 'deploymentNote'
+  | 'deploymentEmpty'
+  | 'globalHeading'
+  | 'globalNote'
+  | 'projectsHeading'
+  | 'projectsNote'
+  | 'projectsEmpty'
+  | 'projectAdd'
+  | 'sessionsHeading'
+  | 'sessionsNote'
+  | 'sessionsEmpty'
+  | 'ruleCount'
+  | 'sessionTotal'
+  | 'projectNew'
+  | 'sessionButton'
+  | 'sessionTitle'
+  | 'sessionCwd'
+  | 'sessionCwdUnknown'
+  | 'sessionNote'
+  | 'close'
   | 'browseTitle'
   | 'browseUp'
   | 'browseChooseDirectory'
@@ -50,6 +79,8 @@ export type FileShieldKey =
 
 export const zh: Record<FileShieldKey, string> = {
   title: '文件屏蔽',
+  panel: '文件屏蔽',
+  panelIntro: '屏蔽规则分三级叠加生效：部署默认、全局、项目、会话同时作用于 agent。每一段只写自己那一层，不会顶替其他层。',
   summaryNone: '未屏蔽任何文件',
   summaryCount: '已屏蔽 {count} 条规则',
   rulesHeading: '已屏蔽的路径',
@@ -67,9 +98,36 @@ export const zh: Record<FileShieldKey, string> = {
   saved: '已保存',
   saveFailed: '保存失败，Host 未接受该值',
   reset: '恢复部署默认',
+  discard: '撤销改动',
+  expand: '展开',
+  collapse: '收起',
+  retry: '重试',
   loading: '正在读取规则…',
+  loadFailed: '无法读取屏蔽状态',
   unavailable: 'Host 未提供 file-shield 设置，规则暂不可编辑。',
   readOnly: '当前连接不写入 Host，规则只读。',
+  readOnlyShort: '只读',
+  deploymentHeading: '部署默认',
+  deploymentNote: '来自部署的 cordis.patch.yml，只读；在这里无法修改。',
+  deploymentEmpty: '部署没有预设任何屏蔽规则。',
+  globalHeading: '全局规则',
+  globalNote: '对所有项目与会话生效，与项目、会话级规则叠加。',
+  projectsHeading: '项目规则',
+  projectsNote: '按工作区目录生效；一个目录一段规则，与其他层叠加。',
+  projectsEmpty: '还没有项目级规则。',
+  projectAdd: '选择项目目录…',
+  sessionsHeading: '会话规则',
+  sessionsNote: '会话级规则在会话顶部的盾牌按钮里配置，这里只做汇总。',
+  sessionsEmpty: '没有会话级规则。',
+  ruleCount: '{count} 条规则',
+  sessionTotal: '{count} 个会话有规则',
+  projectNew: '新目录：保存后才会生效',
+  sessionButton: '会话级屏蔽',
+  sessionTitle: '会话级屏蔽',
+  sessionCwd: '工作区',
+  sessionCwdUnknown: '未知',
+  sessionNote: '本会话的规则与部署默认、全局、项目层叠加生效，不会顶替它们。',
+  close: '关闭',
   browseTitle: '选择要屏蔽的文件',
   browseUp: '上一级',
   browseChooseDirectory: '屏蔽当前目录',
@@ -82,6 +140,8 @@ export const zh: Record<FileShieldKey, string> = {
 
 export const en: Record<FileShieldKey, string> = {
   title: 'File Shield',
+  panel: 'File Shield',
+  panelIntro: 'Shield rules apply in stacked levels: the deployment default, global, project, and session rules all reach the agent at once. Each section writes only its own level and never replaces another.',
   summaryNone: 'No file is blocked',
   summaryCount: '{count} rule(s) blocked',
   rulesHeading: 'Blocked paths',
@@ -99,9 +159,36 @@ export const en: Record<FileShieldKey, string> = {
   saved: 'Saved',
   saveFailed: 'Save failed; the Host did not accept the value',
   reset: 'Reset to deployment default',
+  discard: 'Discard changes',
+  expand: 'Expand',
+  collapse: 'Collapse',
+  retry: 'Retry',
   loading: 'Reading rules…',
+  loadFailed: 'Cannot read the shield state',
   unavailable: 'The Host serves no file-shield settings, so the rules cannot be edited here.',
   readOnly: 'This connection does not write to the Host; the rules are read-only.',
+  readOnlyShort: 'Read-only',
+  deploymentHeading: 'Deployment default',
+  deploymentNote: 'Comes from the deployment cordis.patch.yml and is read-only here.',
+  deploymentEmpty: 'The deployment presets no shield rules.',
+  globalHeading: 'Global rules',
+  globalNote: 'Applies to every project and session, stacked on the project and session rules.',
+  projectsHeading: 'Project rules',
+  projectsNote: 'Applies per workspace directory; one section per directory, stacked with the other levels.',
+  projectsEmpty: 'No project-level rules yet.',
+  projectAdd: 'Pick a project directory…',
+  sessionsHeading: 'Session rules',
+  sessionsNote: 'Session rules are edited in the shield button at the top of the session; this is a summary.',
+  sessionsEmpty: 'No session-level rules.',
+  ruleCount: '{count} rule(s)',
+  sessionTotal: '{count} session(s) with rules',
+  projectNew: 'New directory: takes effect once saved',
+  sessionButton: 'Session shield',
+  sessionTitle: 'Session shield',
+  sessionCwd: 'Workspace',
+  sessionCwdUnknown: 'unknown',
+  sessionNote: 'This session\'s rules stack on the deployment default, global, and project levels; they do not replace them.',
+  close: 'Close',
   browseTitle: 'Pick a file to block',
   browseUp: 'Up one level',
   browseChooseDirectory: 'Block this directory',

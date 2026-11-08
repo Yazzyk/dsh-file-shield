@@ -2,8 +2,15 @@
  * File Shield：拒绝目标路径命中部署规则的模型工具调用，并让被屏蔽路径不出现在搜索
  * 结果里。
  *
- * 规则列表住在插件行的 `config.deny`：组合层是本 bundle 自己 patch 里的默认值，用户层是
- * 由 Plugins 页面写进 profile patch 的同一个字段。
+ * 规则有三个来源，**叠加生效**（取并集，高层不覆盖底层——屏蔽只做加法才安全）：
+ *
+ * 1. **部署默认**：插件行的 `config.deny`。组合层是本 bundle 自己 patch 里的默认值，用户层
+ *    由 Plugins 页面写进 profile patch 的同一个字段；
+ * 2. **三级规则**：全局 / 项目（以工作区绝对路径为键）/ 会话（以会话 id 为键），由侧边栏的
+ *    面板与会话顶部的盾牌按钮维护，落在 `$DSH_HOME/state/dsh-file-shield/tiers.json`。
+ *
+ * 两者不重复：部署默认属于"这一层组合"，随 profile 一起分发；三级规则属于**使用者的数据**，
+ * 键是工作区路径与会话 id，会随会话增删，所以不放进 settings 命名空间。
  *
  * `deny` 是 volatile 字段，因此那条写入只更新 loader 持有的配置引用，不会重启本插件；本
  * 插件监听 `loader/volatile-update` 后重新编译匹配器，所以页面上保存的规则对下一次工具
@@ -11,7 +18,7 @@
  *
  * 本插件不拥有任何 service。它注册一个 pre-execute 决策、一个 post-execute 结果
  * 过滤器、一个可选的系统提示段落，以及——只在同时装配了 web server 与 connection
- * 信任围栏时——Plugins 页面选取文件所需的只读浏览器路由。
+ * 信任围栏时——面板所需的三条路由：只读目录浏览、三级规则读写、会话工作区查询。
  *
  * @module dsh-file-shield
  */
@@ -20,8 +27,11 @@ import z from '@deepseek-ai/schemastery'
 import { BROWSE_PATH, createBrowseHandler } from './browse.js'
 import { readConfigField, resolveConfig } from './config.js'
 import { createPreExecuteListener } from './guard.js'
+import { createLiveRules } from './live.js'
 import { createPostExecuteListener } from './results.js'
 import { compileRules } from './rules.js'
+import { readTiers, statesStamp, writeTiers } from './tier-store.js'
+import { createSessionHandler, createStateHandler, SESSION_PATH, STATE_PATH } from './tier-routes.js'
 
 /** loader 诊断使用的 Cordis 插件名。 */
 export const name = 'file-shield'
@@ -59,6 +69,30 @@ const GUIDANCE = 'Deployment policy blocks some paths from being read, searched,
  */
 function messageOf(error) {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * 一个会话的工作区绝对路径。
+ *
+ * 浏览器端只拿得到会话 id（会话头部那排按钮的注入参数就是它），而项目级规则的键是工作区
+ * 路径——这一跳只能由宿主补上。
+ *
+ * @param {import('@deepseek-ai/cordis').Context} ctx - 插件上下文。
+ * @param {string} sessionId - 会话 id。
+ * @returns {{ cwd: string | null }} 工作区；会话不在此宿主内时为 null。
+ */
+function sessionCwd(ctx, sessionId) {
+  // HTTP 处理与定时器跑在「非活跃上下文」里，直接读 `ctx.agents` 会抛
+  // `cannot get required service "agents" in inactive context`；`ctx.get()` 不抛。
+  const agents = typeof ctx.get === 'function' ? ctx.get('agents') : undefined
+  // agents.get 的形参是品牌化的 SessionId；这里拿到的是 URL 查询串里的普通字符串。
+  // 一个不存在的 id 只会得到 undefined，而"这个会话在不在本宿主里"正是本函数要回答的。
+  const lookup = agents !== undefined && typeof agents.get === 'function'
+    ? /** @type {(id: string) => any} */ (agents.get.bind(agents))
+    : undefined
+  const agent = lookup === undefined ? undefined : lookup(sessionId)
+  const cwd = agent?.session?.header?.cwd
+  return { cwd: typeof cwd === 'string' ? cwd : null }
 }
 
 /**
@@ -106,25 +140,54 @@ export function apply(ctx, config) {
     return Array.isArray(value) ? value : []
   }
 
-  /** 编译后的匹配器；每次提交变更后重建，工具调用读的就是它。 */
-  let rules = compile(liveDeny())
+  /** 部署默认编译后的匹配器；只在 loader 提交变更后重建。 */
+  let deploymentRules = compile(liveDeny())
+
+  /**
+   * 三级状态：文件读不出来时退回空状态（一个坏 JSON 不该关掉屏蔽）。
+   * 用"文件时间戳变了才重读"来发现外部改动，避免每次工具调用都读盘。
+   */
+  let stateStamp = statesStamp()
+  let tiersState = readTiers(ctx.logger)
+
+  /**
+   * 三级状态的当前值；状态文件被外部改过时先重读。
+   * @returns {import('./tiers.js').Tiers} 当前状态。
+   */
+  const currentTiers = () => {
+    const stamp = statesStamp()
+    if (stamp !== stateStamp) {
+      stateStamp = stamp
+      tiersState = readTiers(ctx.logger)
+    }
+    return tiersState
+  }
+
+  /** 三级规则按调用现算的匹配器。 */
+  const liveTiers = createLiveRules({ readTiers: currentTiers })
 
   /**
    * 记录当前生效的规则数量。屏蔽规则本身不写进日志，数量足够诊断。
    * @returns {void}
    */
   const logRules = () => {
-    if (rules.length === 0) {
-      ctx.logger.info('file-shield: no rule configured yet; add paths on the plugin page or set config.deny')
-    } else {
-      ctx.logger.info(`file-shield: ${rules.length} rule(s) active`)
+    const tiers = currentTiers()
+    const projects = Object.keys(tiers.projects).length
+    const sessions = Object.keys(tiers.sessions).length
+    if (deploymentRules.length === 0 && tiers.global.length === 0 && projects === 0 && sessions === 0) {
+      ctx.logger.info('file-shield: no rule configured yet; add paths on the panel or set config.deny')
+      return
     }
+    ctx.logger.info(
+      `file-shield: ${deploymentRules.length} deployment rule(s) + ${tiers.global.length} global, `
+      + `${projects} project tier(s), ${sessions} session tier(s) active`,
+    )
   }
 
   // 规则列表是 volatile 字段：Plugins 页面保存时 loader 只提交这个引用，不重启插件，
   // 所以在这里重建匹配器，让新规则对下一次工具调用生效。
   ctx.on('loader/volatile-update', () => {
-    rules = compile(liveDeny())
+    deploymentRules = compile(liveDeny())
     logRules()
   })
 
@@ -158,9 +221,24 @@ export function apply(ctx, config) {
     }
   }
 
+  /**
+   * 一次调用要用的全部规则：部署默认 + 该调用命中的三级规则。
+   *
+   * 三级规则按调用现算而不是保存时合并：生效范围本身就是调用的一部分（同一 agent 在不同
+   * 会话、或同一会话换了工作区，命中的项目规则不同），保存时合并只能得到"最后一次保存时的
+   * 那份"。代价只是一次数组拼接。
+   *
+   * @param {any} exec - 待执行的工具调用。
+   * @returns {import('./rules.js').Rule[]} 这次调用要用的规则。
+   */
+  const rulesForCall = exec => {
+    const tiers = liveTiers.rulesFor(exec)
+    return tiers.length === 0 ? deploymentRules : [...deploymentRules, ...tiers]
+  }
+
   // 前置注册，使规则在本插件要拒绝的调用上先于审批请求或任何其它策略监听器做出决定。
   ctx.on('tools/pre-execute', createPreExecuteListener({
-    activeRules: () => rules,
+    activeRules: rulesForCall,
     resolveTarget,
     extraPathArgs: resolved.extraPathArgs,
     extraCommandArgs: resolved.extraCommandArgs,
@@ -169,7 +247,7 @@ export function apply(ctx, config) {
 
   // 前置注册，使委托先到达后面每一个监听器，再由本过滤器改写它们最终确定的值。
   ctx.on('tools/post-execute', createPostExecuteListener({
-    activeRules: () => rules,
+    activeRules: rulesForCall,
     resolveTarget,
     logger: ctx.logger,
   }), { prepend: true })
@@ -186,18 +264,55 @@ export function apply(ctx, config) {
     })
   }
 
-  // 浏览路由会列出任意绝对目录，因此只在组合的 connection 信任围栏可用、能对它把关时
-  // 才挂载；没有该围栏时文件选择器保持不可用，而不是开放一个未认证的目录列举。
+  // 这三条路由分别会列目录、读写规则、回答会话工作区，都是暴露宿主信息的面，因此只在组合的
+  // connection 信任围栏可用、能对它把关时才挂载；没有该围栏时面板保持不可用，而不是开放
+  // 未认证的读写入口。
   ctx.inject(['webServer', 'connection'], (webCtx) => {
+    /** @param {{ readonly headers: import('node:http').IncomingMessage['headers'] }} request */
+    const authorize = request => connectionOf(webCtx).requestRejection(request)
+
     webCtx.effect(
       () => webCtx.webServer.register({
         kind: 'exact',
         path: BROWSE_PATH,
-        handler: createBrowseHandler({
-          authorize: request => connectionOf(webCtx).requestRejection(request),
-        }),
+        handler: createBrowseHandler({ authorize }),
       }),
       'file-shield browse route',
+    )
+
+    webCtx.effect(
+      () => webCtx.webServer.register({
+        kind: 'exact',
+        path: STATE_PATH,
+        handler: createStateHandler({
+          authorize,
+          read: () => currentTiers(),
+          // 部署默认只读展示：面板要能回答"这条为什么不能删"。
+          deployment: () => deploymentRules.map(rule => rule.pattern),
+          write: (next) => {
+            writeTiers(next)
+            // 写成功立刻把内存态与文件对齐：不然在那之后、下一次时间戳变化之前，工具调用还会
+            // 按旧规则放行，而页面已经显示"已保存"。
+            tiersState = next
+            stateStamp = statesStamp()
+            logRules()
+          },
+          logger: webCtx.logger,
+        }),
+      }),
+      'file-shield state route',
+    )
+
+    webCtx.effect(
+      () => webCtx.webServer.register({
+        kind: 'exact',
+        path: SESSION_PATH,
+        handler: createSessionHandler({
+          authorize,
+          sessionInfo: sessionId => sessionCwd(webCtx, sessionId),
+        }),
+      }),
+      'file-shield session route',
     )
   })
 

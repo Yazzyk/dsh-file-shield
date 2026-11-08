@@ -49,7 +49,8 @@ export function blockedDecision(displayPath, rule) {
 
 /**
  * @typedef {object} GuardOptions
- * @property {() => import('./rules.js').Rule[]} activeRules - 当前已编译的规则。
+ * @property {(exec?: any) => import('./rules.js').Rule[]} activeRules - 当前已编译的规则。
+ *   接收调用本身：规则的生效范围（哪个项目、哪个会话）就是调用的一部分，见 `live.js`。
  * @property {(path: string, cwd: string | undefined, signal: AbortSignal | undefined) => Promise<import('./rules.js').TargetSpellings | undefined>} resolveTarget - 规范化一个模型给出的路径。
  * @property {Record<string, readonly string[]>} extraPathArgs - 部署登记的工具 → 路径参数名。
  * @property {Record<string, string>} extraCommandArgs - 部署登记的工具 → 命令参数名。
@@ -124,7 +125,7 @@ async function hitCommand(exec, command, rules, options, root) {
 export function createPreExecuteListener(options) {
   const { activeRules, extraPathArgs, extraCommandArgs, logger } = options
   return async function guardPreExecute(exec, next) {
-    const rules = activeRules()
+    const rules = activeRules(exec)
     if (rules.length === 0) return next()
     const root = workspaceRoot(exec)
 

@@ -189,6 +189,10 @@ Host 侧注入 `webServer` **与** `connection` 为**可选**：两者都在时�
 
 ## 8. GUI 页面
 
+Rule 有两个来源（见 §13）。本节先记原有的 Plugins 页面，再记三级规则的面板。
+
+### 8.1 Plugins 页面（部署默认那一层）
+
 Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 
 - `view: 'summary'`：一行，形如"已屏蔽 N 条规则"。
@@ -204,6 +208,28 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 `inject = ['slots', 'locale']`；`configForms` 与 `uiWorkspace` 都用 `ctx.get(...)` 在渲染时机会性读取，而不是写进 `inject`——宿主没装载 settings 或 workspace UI 时插件仍须激活，页面只是显示「不可用」或隐藏目录选择按钮。`configForms` 的命名空间是 profile 条目 id，也就是本 bundle patch 声明的 `file-shield`（官方插件同样硬编码自己的行 id）。
 
 文案全部来自本包字典；样式为普通 CSS，构建期内联成字符串，插件 fiber 内一次性注入 `<style>`，类名统一前缀 `dfs-`。
+
+### 8.2 三级规则的面板与会话窗口
+
+两处注册，都是官方已占位的槽：
+
+| 位置 | 槽 | 注册形状 |
+|---|---|---|
+| 侧边栏面板列表 + 主区页面 | `sidebar.panellist` + `main` | 两处的 id 与 key 都是 `file-shield`；面板行图标 `IconShieldOutlineRegular` |
+| 会话顶部 | `conversation.session.header.utilities` | `inject: (sessionId) => ({ sessionId })`，即该槽的注入参数就是当前会话 id |
+
+会话顶部那处**默认锚在当前会话上**，所以那里只管会话级规则；全局与项目级在侧边栏面板里，两处共用同一份状态与同一个保存路径。分开的理由不是权限，是心流：改会话级规则时人不该还要在面板里再挑一次"哪个会话"。
+
+面板的数据面是三条插件路由（§7 同款信任围栏，缺 `connection` 时整组不挂载）：
+
+- `GET /file-shield/state` 读三级状态；
+- `POST /file-shield/state` 写某一级（`scope: global | project | session`，空列表等于删条目）；
+- `GET /file-shield/session?session=<id>` 把会话 id 换成工作区绝对路径——项目级的键只能这么补，浏览器端只拿得到会话 id。
+
+被否决的方案：
+
+- **把三级规则塞进 settings 命名空间**：命名空间是"一个插件的配置项"，而这里的键是项目路径与会话 id，是随会话增删的**数据**。塞进去会让 Plugins 页面渲染出几十个会话 id，也会让每次会话开合写一次用户配置。
+- **在会话顶部直接给"选文件"的完整浏览器**：会话窗口要窄。它只做会话级增删，选文件复用同一个 `DirectoryBrowser`。
 
 ## 9. 构建
 
@@ -249,3 +275,51 @@ Client 半注册进 `plugins.bundle.config`，`key = 'dsh-file-shield'`：
 - **grep/glob 结果静默剔除**，不给模型"有内容被隐藏"的提示。
 - **规则不校验所指向的文件是否存在**：屏蔽先于存在的路径是合理用法。
 - 页面只在 Plugins 页出现；若宿主未装载 plugin manager 或未暴露该槽，页面不存在（守卫不受影响）。
+## 13. 三级屏蔽（全局 / 项目 / 会话）
+
+日期：2026-11-08（对应 issue #1）
+
+### 13.1 为什么是三级
+
+部署默认（`config.deny`）只能由部署者改，而"哪些文件不该被这个 agent 读"在不同粒度上的答案不一样：`.env` 通配规则是全局的，某个仓库里的行情快照是项目级的，而一次会话里临时打开又不想被读到的东西只属于那次会话。一层规则只能靠不断手工合并来近似这三件事。
+
+**叠加而不是覆盖**：命中的规则取并集。理由是屏蔽只做加法才安全——若高层能覆盖底层，一次手滑就能把部署策略整段关掉。这与"允许列表"正相反：允许列表的直觉是"越具体越优先"，而屏蔽的直觉必须是"越具体只会更严"。
+
+### 13.2 数据放在哪
+
+`$DSH_HOME/state/dsh-file-shield/tiers.json`（默认 `~/.dsh/state/dsh-file-shield/tiers.json`），权限 0600，写入走"临时文件 + rename"（同文件系统内 rename 原子，进程被杀最多留下一个临时文件，不会让状态文件变成半截 JSON）。
+
+```json
+{
+  "version": 1,
+  "global": ["**/.env"],
+  "projects": { "/Users/me/work/app": ["**/snapshots/*.csv"] },
+  "sessions": { "session-1dd4b518-…": ["notes/draft.md"] }
+}
+```
+
+- 空列表**不落键**：状态文件不会堆满空壳条目。
+- 读失败（坏 JSON、不认识的 version）退回空状态并记一条 warn——一个坏文件不该关掉屏蔽，那等于用一次解析错误换掉整层防护。
+- 文件被外部改过（手工编辑或另一个 dsh 进程写入）会被发现：守卫每次调用比对 `mtime:size`，变了就重读。没有这一条，手改不会生效，而使用者会以为规则已经改了。
+
+### 13.3 按调用现算
+
+`src/host/live.js` 在**每次工具调用**时拼出该调用生效的规则：`global` + 工作区命中的 `projects` 条目 + 该会话的 `sessions` 条目，再与部署默认合并。
+
+保存时合并是行不通的：生效范围本身就是调用的一部分——同一个 agent 在不同会话里、或同一会话换了工作区，命中的项目规则不同，保存时合并只能得到"最后一次保存时的那份"。现算的代价是一次数组拼接，而规则总数有上限（每级 500 条、每级 200 个键），所以不需要缓存。
+
+项目键与工作区用**大小写不敏感**的前缀比较：macOS 与 Windows 的默认文件系统就是大小写不敏感，区分大小写的比较会让 `/Users/Me/proj` 记录的项目规则在 `/Users/me/proj` 的会话里静默失效。
+
+嵌套的项目根会同时命中（`/w` 与 `/w/app` 都在 `/w/app/src` 里），规则累加。
+
+### 13.4 三条路由
+
+见 §8.2。都不缓存（`Cache-Control: no-store`），都先过 `connection.requestRejection()`；没有该围栏时整组不挂载，而不是开放未认证的读写入口。请求体上限 1 MiB，超了直接 413 而不继续读（否则一个坏请求能占住内存）。
+
+错误码是稳定的：`invalid-body` / `invalid-rules` / `invalid-scope` / `not-absolute` / `rule-too-long` / `too-many-rules` / `too-many-entries` / `body-too-large`（413）/ `write-failed`（500）/ `unsupported`（501，组合里没有 agent 注册表时）。
+
+### 13.5 测试
+
+- `tests/tiers.test.js`：纯状态语义——去重去空、上限、空列表删键、不改入参、`isWithin` 的前缀边界与大小写、嵌套项目根。
+- `tests/tiers-io.test.js`：状态文件原子写入与坏文件降级、时间戳变化、GET/POST 形状与全部错误码、围栏拒绝、`live.js` 的按调用解析与外部改动热生效。
+- `tests/host.test.js`：接线——三级规则与部署默认叠加、项目级只在命中的工作区生效、会话级只影响那个会话、结果过滤同样吃三级规则、缺服务时一条路由都不挂载。
