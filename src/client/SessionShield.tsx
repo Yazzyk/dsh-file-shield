@@ -1,23 +1,27 @@
 /**
- * 会话顶部的盾牌按钮，以及它打开的会话级配置对话框。
+ * 会话的「屏蔽」标签页：一个与「对话」「轨迹」同级的 Conversation View。
  *
- * 会话级规则挂在会话本身上：同一条会话怎么被屏蔽，取决于它的 id，
- * 而不是某个项目的路径。因此这里同时展示会话的工作区（宿主记的那一个），
- * 让用户看清自己正在给哪段工作区加规则；规则本身与其他层叠加生效。
+ * 为什么是标签页而不是会话头部的按钮：会话级规则是"这一整段会话怎么被对待"，与
+ * 对话、轨迹属于同一个层级的东西——用户找它的心智位置就在那排标签里，而不是某个
+ * 需要先发现的图标按钮。放在标签页还顺带解决了空间：规则列表、文件浏览器、保存
+ * 结论都需要高度，按钮弹窗里只能放下一小块。
+ *
+ * 会话 id 由注册时的 inject 工厂给出（`conversation.view` 是 session 作用域的 list
+ * 座位），所以这个页面默认就锚在当前会话上，不需要再挑一次会话。
  *
  * @module dsh-file-shield/src/client/SessionShield
  */
 
-import { Button, IconShieldOutlineRegular, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconShieldOutlineRegular, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { useEffect, useState } from 'react'
-// 仅类型：引入 'conversation.session.header.utilities' 座位，不产生运行时导入。
+// 仅类型：引入 'conversation.view' 座位与 SessionStandardProps 的合并声明，不产生运行时导入。
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { RuleEditor } from './LevelsPanel.tsx'
 import type { NS } from './locales.ts'
 import { StateError, readSessionCwd, readState, writeState } from './state.ts'
 
-/** 注册项注入按钮的业务面：本按钮所属的会话。 */
+/** 注册项注入页面的业务面：本页所属的会话。 */
 export interface SessionShieldFace {
   /** 会话 id，来自注册时的 inject 工厂。 */
   sessionId: string
@@ -25,53 +29,21 @@ export interface SessionShieldFace {
 
 /** 完整的组件 props：运行时份额、locale 座位，以及注入的业务面。 */
 export type SessionShieldProps =
-  PropsRuntime<'conversation.session.header.utilities'>
+  PropsRuntime<'conversation.view'>
   & PropsLocale<typeof NS>
   & InjectFace<SessionShieldFace>
 
 /**
- * 渲染会话头部的盾牌按钮与它的对话框。
+ * 渲染会话级屏蔽页。
  *
- * @param props - 组装后的 slot props。
- * @returns 一个按钮；对话框打开时才挂载内容。
- */
-export function SessionShieldAction(props: SessionShieldProps) {
-  const { t, sessionId } = props
-  const [open, setOpen] = useState(false)
-
-  return (
-    <>
-      <Button
-        size="sm"
-        variant="ghost"
-        icon={<IconShieldOutlineRegular size={16} />}
-        aria-label={t('sessionButton')}
-        title={t('sessionButton')}
-        onClick={() => { setOpen(true) }}
-      />
-      {open
-        ? <SessionShieldDialog t={t} sessionId={sessionId} onClose={() => { setOpen(false) }} />
-        : null}
-    </>
-  )
-}
-
-/**
- * 会话级对话框本体。
- *
- * 每次打开都重新读一次状态：规则可能在别的标签页或别的会话里被改过，
+ * 每次进入都重新读一次状态：规则可能在别的标签页、别的会话或面板里被改过，
  * 缓存一份旧的会让人以为保存没生效。
  *
- * @param props.t - 绑定到本插件命名空间的翻译函数。
- * @param props.sessionId - 本按钮所属的会话。
- * @param props.onClose - 关闭对话框。
- * @returns 含工作区路径与会话级规则编辑器的对话框。
+ * @param props - 组装后的 slot props。
+ * @returns 会话工作区、会话 id、规则编辑器与保存栏。
  */
-function SessionShieldDialog({ t, sessionId, onClose }: {
-  t: SessionShieldProps['t']
-  sessionId: string
-  onClose: () => void
-}) {
+export function SessionShieldView(props: SessionShieldProps) {
+  const { t, sessionId } = props
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading')
   const [rules, setRules] = useState<readonly string[]>([])
   const [cwd, setCwd] = useState<string | null>(null)
@@ -93,7 +65,7 @@ function SessionShieldDialog({ t, sessionId, onClose }: {
         setFailure(error instanceof StateError ? error.code : String(error))
         setStatus('failed')
       })
-    // 工作区路径只用于展示，取不到就显示「未知」，不让它拖垮整块对话框。
+    // 工作区路径只用于展示，取不到就显示「未知」，不让它拖垮整页。
     readSessionCwd(sessionId, controller.signal)
       .then((path) => { if (!controller.signal.aborted) setCwd(path) })
       .catch(() => { if (!controller.signal.aborted) setCwd(null) })
@@ -112,41 +84,35 @@ function SessionShieldDialog({ t, sessionId, onClose }: {
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      closeLabel={t('close')}
-      title={t('sessionTitle')}
-      description={t('sessionNote')}
-      footer={<Button variant="outline" onClick={onClose}>{t('close')}</Button>}
-      contentClassName="dfs-dialogBody"
-    >
-      <div className="dfs-dialog">
-        <div className="dfs-head">
-          <span className="dfs-status">{t('sessionCwd')}</span>
-          <code className="dfs-path dfs-path-grow">{cwd ?? t('sessionCwdUnknown')}</code>
-        </div>
-        <div className="dfs-head">
-          <span className="dfs-status">session</span>
-          <code className="dfs-path dfs-path-grow">{sessionId}</code>
-          <Tag tone="neutral">{t('ruleCount', { count: rules.length })}</Tag>
-        </div>
+    <div className="dfs-panel">
+      <header className="dfs-panelHead">
+        <IconShieldOutlineRegular size={20} />
+        <h2 className="dfs-panelTitle">{t('viewTab')}</h2>
+        <Tag tone="neutral">{t('ruleCount', { count: rules.length })}</Tag>
+      </header>
+      <p className="dfs-note">{t('viewLead')}</p>
 
-        {status === 'loading' ? <p className="dfs-note">{t('loading')}</p> : null}
-        {status === 'failed'
-          ? (
-            <div className="dfs-editor">
-              <p className="dfs-note dfs-note-error">{t('loadFailed')} — {failure ?? 'unknown'}</p>
-              <div className="dfs-buttons">
-                <Button variant="outline" onClick={() => { setReload(value => value + 1) }}>{t('retry')}</Button>
-              </div>
-            </div>
-          )
-          : null}
-        {status === 'ready'
-          ? <RuleEditor t={t} rules={rules} writable onSave={save} />
-          : null}
+      <div className="dfs-head">
+        <span className="dfs-status">{t('sessionCwd')}</span>
+        <code className="dfs-path dfs-path-grow">{cwd ?? t('sessionCwdUnknown')}</code>
       </div>
-    </Modal>
+      <div className="dfs-head">
+        <span className="dfs-status">session</span>
+        <code className="dfs-path dfs-path-grow">{sessionId}</code>
+      </div>
+
+      {status === 'loading' ? <p className="dfs-note">{t('loading')}</p> : null}
+      {status === 'failed'
+        ? (
+          <div className="dfs-editor">
+            <p className="dfs-note dfs-note-error">{t('loadFailed')} — {failure ?? 'unknown'}</p>
+            <div className="dfs-buttons">
+              <Button variant="outline" onClick={() => { setReload(value => value + 1) }}>{t('retry')}</Button>
+            </div>
+          </div>
+        )
+        : null}
+      {status === 'ready' ? <RuleEditor t={t} rules={rules} writable onSave={save} /> : null}
+    </div>
   )
 }

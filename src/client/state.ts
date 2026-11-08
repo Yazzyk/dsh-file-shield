@@ -22,11 +22,23 @@ export interface ShieldLevels {
   readonly sessions: Readonly<Record<string, readonly string[]>>
 }
 
+/** 本宿主的 dsh 工作区：项目级规则的键取它的 `path`。 */
+export interface ShieldWorkspace {
+  readonly id: string
+  readonly path: string
+  /** 工作区标题；面板显示它而不是路径。 */
+  readonly title: string
+  /** 归属该工作区的会话数。 */
+  readonly sessions: number
+}
+
 /** `GET` / `POST /file-shield/state` 的响应体。 */
 export interface ShieldState {
   readonly levels: ShieldLevels
   /** 部署默认（插件行的 `config.deny`），只读展示。 */
   readonly deployment: readonly string[]
+  /** dsh 工作区列表；组合里没有 workspace 包时为空。 */
+  readonly workspaces: readonly ShieldWorkspace[]
 }
 
 /** `POST /file-shield/state` 的请求体：一次只写一层。 */
@@ -82,13 +94,43 @@ function ruleMap(value: unknown): Record<string, string[]> {
 }
 
 /**
+ * 把 `workspaces` 收窄成工作区列表。
+ *
+ * 缺字段或条目形状不对时返回空数组：面板据此显示"这个宿主没有工作区列表"，
+ * 而不是让整页失败——项目级仍然可以手输路径。
+ *
+ * @param value - 待收窄的字段。
+ * @returns 工作区列表。
+ */
+function workspaceList(value: unknown): ShieldWorkspace[] {
+  if (!Array.isArray(value)) return []
+  const list: ShieldWorkspace[] = []
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const record = entry as { id?: unknown, path?: unknown, title?: unknown, sessions?: unknown }
+    if (typeof record.path !== 'string' || record.path === '') continue
+    list.push({
+      id: typeof record.id === 'string' ? record.id : record.path,
+      path: record.path,
+      title: typeof record.title === 'string' && record.title !== '' ? record.title : record.path,
+      sessions: typeof record.sessions === 'number' ? record.sessions : 0,
+    })
+  }
+  return list
+}
+
+/**
  * 把一份响应整形成 {@link ShieldState}。
  *
  * @param payload - 已解析的响应体。
  * @returns 字段齐备的状态；缺失字段按空处理。
  */
 function toState(payload: unknown): ShieldState {
-  const root = (typeof payload === 'object' && payload !== null ? payload : {}) as { levels?: unknown, deployment?: unknown }
+  const root = (typeof payload === 'object' && payload !== null ? payload : {}) as {
+    levels?: unknown
+    deployment?: unknown
+    workspaces?: unknown
+  }
   const levels = (typeof root.levels === 'object' && root.levels !== null ? root.levels : {}) as {
     global?: unknown
     projects?: unknown
@@ -101,6 +143,7 @@ function toState(payload: unknown): ShieldState {
       sessions: ruleMap(levels.sessions),
     },
     deployment: ruleList(root.deployment),
+    workspaces: workspaceList(root.workspaces),
   }
 }
 

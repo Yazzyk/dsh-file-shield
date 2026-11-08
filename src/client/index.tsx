@@ -10,7 +10,7 @@
  * 宿主 schema 标成 volatile 的那一个。这个服务按机会性依赖读取：始终缺席只会
  * 让页面显示「不可用」，不会让本插件的 fiber 一直等下去。
  *
- * 三级配置窗口与会话盾牌按钮走插件自己的状态路由（见 `state.ts`），
+ * 三级配置窗口、会话的「屏蔽」标签页走插件自己的状态路由（见 `state.ts`），
  * 与 settings 表单无关：它们是两张不同的写入口，但读的是同一份生效规则。
  *
  * @module dsh-file-shield/src/client
@@ -24,7 +24,7 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
-// 仅类型：声明 'main' 与 'conversation.session.header.utilities' 两个座位。
+// 仅类型：声明 'main' 与 'conversation.view' 两个座位。
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -33,7 +33,7 @@ import { IconShieldOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from './page.css'
 import { FileShieldPage, type FileShieldFace, type RulesSection } from './Page.tsx'
 import { LevelsPanel, type LevelsPanelFace } from './LevelsPanel.tsx'
-import { SessionShieldAction } from './SessionShield.tsx'
+import { SessionShieldView, type SessionShieldFace } from './SessionShield.tsx'
 import { NS, en, zh } from './locales.ts'
 
 /** 本包的名称，同时也是 Plugins 页面派发所用的 bundle 键。 */
@@ -150,11 +150,15 @@ export function apply(ctx: Context): void {
     label: () => t('panel'),
   }, ShieldPanelIcon))
 
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
-    id: 'file-shield-session',
-    order: 5,
+  // 会话级规则的入口是一个 **Conversation View**（与「对话」「轨迹」同级的那排标签），
+  // 不是会话头部的图标按钮：那排标签才是"这一整段会话"的层级，按钮要先去发现它。
+  // order 20 落在 chat(0) 与 trajectory(10) 之后、stats(40) 之前。
+  ctx.slots.inject('conversation.view', () => ctx.slots.register({
+    name: 'conversation.view',
+    id: 'file-shield',
+    order: 20,
     locale: NS,
-    inject: (sessionId) => ({ sessionId }),
-  }, SessionShieldAction))
+    label: () => t('viewTab'),
+    inject: (sessionId): SessionShieldFace => ({ sessionId }),
+  }, SessionShieldView))
 }

@@ -325,6 +325,35 @@ export function LevelsPanel(props: LevelsPanelProps) {
         </div>
         <p className="dfs-note">{t('projectsNote')}</p>
 
+        {/* dsh 的工作区列表：项目级的键取它的路径，所以先给"点一个项目"，再给手动入口。 */}
+        {state.workspaces.length === 0
+          ? <p className="dfs-note">{t('projectsNoWorkspace')}</p>
+          : (
+            <ul className="dfs-rules">
+              {state.workspaces.map(workspace => {
+                const has = workspace.path in state.levels.projects
+                return (
+                  <li key={workspace.id}>
+                    <button
+                      type="button"
+                      className="dfs-row"
+                      onClick={() => {
+                        if (has) { setOpen(workspace.path); return }
+                        pickProject(workspace.path)
+                      }}
+                    >
+                      <span className="dfs-rowName">{workspace.title}</span>
+                      <code className="dfs-path">{workspace.path}</code>
+                      <Tag tone={has ? 'info' : 'quiet'}>
+                        {has ? t('ruleCount', { count: state.levels.projects[workspace.path]?.length ?? 0 }) : t('projectUse')}
+                      </Tag>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
         {projects.length === 0 && extra === undefined ? <p className="dfs-note">{t('projectsEmpty')}</p> : null}
 
         {projects.map(([workspace, rules]) => (
@@ -374,6 +403,7 @@ export function LevelsPanel(props: LevelsPanelProps) {
         )}
 
         <div className="dfs-buttons">
+          {/* 手动入口保留：dsh 里没有登记的工作区（脚本目录、临时目录）也要能加。 */}
           <Button variant="outline" onClick={() => { setBrowsing(true) }}>{t('projectAdd')}</Button>
           <Button
             variant="outline"

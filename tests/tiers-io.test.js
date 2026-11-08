@@ -100,6 +100,7 @@ test('state 路由: GET 返回三级状态', async () => {
   assert.deepEqual(JSON.parse(res.body), {
     levels: { global: ['a'], projects: { '/w': ['b'] }, sessions: {} },
     deployment: [],
+    workspaces: [],
   })
   assert.equal(res.headers['cache-control'], 'no-store')
 })
@@ -244,7 +245,7 @@ test('live: 规则仍然按部署的 matchCase 编译', () => {
   assert.equal(live.rulesFor({}).length, 1)
 })
 
-test('live: refresh 存在时每次调用都先问它（用于发现外部改动）', () => {
+test('live: refresh 存在时每次调用只问一次（一次调用只读一遍状态）', () => {
   let reads = 0
   const live = createLiveRules({
     readTiers: () => normalizeTiers({}),
@@ -252,7 +253,7 @@ test('live: refresh 存在时每次调用都先问它（用于发现外部改动
   })
   live.rulesFor({})
   live.rulesFor({})
-  assert.equal(reads, 2)
+  assert.equal(reads, 2, '两次调用各读一次；不能因为内部查询重复而读两遍')
 })
 
 test('接线：状态文件被外部改过之后，下一次调用按新规则', async () => {

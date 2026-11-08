@@ -62,8 +62,10 @@ export type FileShieldKey =
   | 'ruleCount'
   | 'sessionTotal'
   | 'projectNew'
-  | 'sessionButton'
-  | 'sessionTitle'
+  | 'projectUse'
+  | 'projectsNoWorkspace'
+  | 'viewTab'
+  | 'viewLead'
   | 'sessionCwd'
   | 'sessionCwdUnknown'
   | 'sessionNote'
@@ -113,17 +115,19 @@ export const zh: Record<FileShieldKey, string> = {
   globalHeading: '全局规则',
   globalNote: '对所有项目与会话生效，与项目、会话级规则叠加。',
   projectsHeading: '项目规则',
-  projectsNote: '按工作区目录生效；一个目录一段规则，与其他层叠加。',
+  projectsNote: '对 dsh 工作区里的某个项目生效；一个项目一段规则，与其他层叠加。下面列出的是这个宿主已有的工作区，也可以手动加一个没登记的目录。',
   projectsEmpty: '还没有项目级规则。',
   projectAdd: '选择项目目录…',
   sessionsHeading: '会话规则',
-  sessionsNote: '会话级规则在会话顶部的盾牌按钮里配置，这里只做汇总。',
+  sessionsNote: '会话级规则在会话的「屏蔽」标签页里配置，这里只做汇总。',
   sessionsEmpty: '没有会话级规则。',
   ruleCount: '{count} 条规则',
   sessionTotal: '{count} 个会话有规则',
   projectNew: '新目录：保存后才会生效',
-  sessionButton: '会话级屏蔽',
-  sessionTitle: '会话级屏蔽',
+  projectUse: '选中',
+  projectsNoWorkspace: '这个宿主没有 dsh 工作区列表（组合里没装 workspace 包）；用下面的浏览按钮手动选目录。',
+  viewTab: '屏蔽',
+  viewLead: '这个会话的规则只作用于当前会话，与部署默认、全局、项目级叠加生效。',
   sessionCwd: '工作区',
   sessionCwdUnknown: '未知',
   sessionNote: '本会话的规则与部署默认、全局、项目层叠加生效，不会顶替它们。',
@@ -174,17 +178,19 @@ export const en: Record<FileShieldKey, string> = {
   globalHeading: 'Global rules',
   globalNote: 'Applies to every project and session, stacked on the project and session rules.',
   projectsHeading: 'Project rules',
-  projectsNote: 'Applies per workspace directory; one section per directory, stacked with the other levels.',
+  projectsNote: 'Applies to one project inside a dsh workspace; one section per project, stacked with the other levels. The list below is this host\'s own workspaces; you can also add an unregistered directory.',
   projectsEmpty: 'No project-level rules yet.',
   projectAdd: 'Pick a project directory…',
   sessionsHeading: 'Session rules',
-  sessionsNote: 'Session rules are edited in the shield button at the top of the session; this is a summary.',
+  sessionsNote: 'Session rules are edited in the session\'s Shield tab; this is a summary.',
   sessionsEmpty: 'No session-level rules.',
   ruleCount: '{count} rule(s)',
   sessionTotal: '{count} session(s) with rules',
   projectNew: 'New directory: takes effect once saved',
-  sessionButton: 'Session shield',
-  sessionTitle: 'Session shield',
+  projectUse: 'Select',
+  projectsNoWorkspace: 'This host exposes no dsh workspace list; pick a directory with the browser below.',
+  viewTab: 'Shield',
+  viewLead: 'Rules here apply to this session only; they stack with the deployment default, the global tier, and project tiers.',
   sessionCwd: 'Workspace',
   sessionCwdUnknown: 'unknown',
   sessionNote: 'This session\'s rules stack on the deployment default, global, and project levels; they do not replace them.',

@@ -32,6 +32,7 @@ import { createPostExecuteListener } from './results.js'
 import { compileRules } from './rules.js'
 import { readTiers, statesStamp, writeTiers } from './tier-store.js'
 import { createSessionHandler, createStateHandler, SESSION_PATH, STATE_PATH } from './tier-routes.js'
+import { listWorkspaces, workspaceOfSession } from './workspaces.js'
 
 /** loader 诊断使用的 Cordis 插件名。 */
 export const name = 'file-shield'
@@ -79,7 +80,7 @@ function messageOf(error) {
  *
  * @param {import('@deepseek-ai/cordis').Context} ctx - 插件上下文。
  * @param {string} sessionId - 会话 id。
- * @returns {{ cwd: string | null }} 工作区；会话不在此宿主内时为 null。
+ * @returns {{ cwd: string | null, workspace: { id: string, path: string, title: string } | null }} 会话的工作区，以及它所属的 dsh Workspace。
  */
 function sessionCwd(ctx, sessionId) {
   // HTTP 处理与定时器跑在「非活跃上下文」里，直接读 `ctx.agents` 会抛
@@ -92,7 +93,14 @@ function sessionCwd(ctx, sessionId) {
     : undefined
   const agent = lookup === undefined ? undefined : lookup(sessionId)
   const cwd = agent?.session?.header?.cwd
-  return { cwd: typeof cwd === 'string' ? cwd : null }
+  const path = typeof cwd === 'string' ? cwd : undefined
+  // 项目级的键是 dsh Workspace 的路径：会话的 cwd 可能只是它下面的子目录，所以归属以
+  // dsh 的 Workspace 记录为准（见 workspaces.js）。
+  const workspace = workspaceOfSession(ctx, sessionId, path)
+  return {
+    cwd: path ?? null,
+    workspace: workspace === undefined ? null : { id: workspace.id, path: workspace.path, title: workspace.title },
+  }
 }
 
 /**
@@ -163,8 +171,23 @@ export function apply(ctx, config) {
     return tiersState
   }
 
+  /**
+   * 该调用所属项目的根：优先 dsh 的 Workspace 记录（会话归属于某个工作区），
+   * 没有记录时退回会话 cwd——那正是"项目级 = 对 dsh 工作区里某个项目生效"的落地方式。
+   */
+  /** @param {any} exec */
+  const workspaceRootOf = (exec) => {
+    const sessionId = exec?.agent?.session?.id
+    const cwd = exec?.agent?.session?.header?.cwd
+    if (typeof sessionId === 'string') {
+      const workspace = workspaceOfSession(ctx, sessionId, typeof cwd === 'string' ? cwd : undefined)
+      if (workspace !== undefined) return workspace.path
+    }
+    return typeof cwd === 'string' ? cwd : undefined
+  }
+
   /** 三级规则按调用现算的匹配器。 */
-  const liveTiers = createLiveRules({ readTiers: currentTiers })
+  const liveTiers = createLiveRules({ readTiers: currentTiers, workspaceFor: workspaceRootOf })
 
   /**
    * 记录当前生效的规则数量。屏蔽规则本身不写进日志，数量足够诊断。
@@ -289,6 +312,8 @@ export function apply(ctx, config) {
           read: () => currentTiers(),
           // 部署默认只读展示：面板要能回答"这条为什么不能删"。
           deployment: () => deploymentRules.map(rule => rule.pattern),
+          // 项目层要选的是 dsh 的 Workspace，不是随手敲的路径。
+          workspaces: () => listWorkspaces(ctx),
           write: (next) => {
             writeTiers(next)
             // 写成功立刻把内存态与文件对齐：不然在那之后、下一次时间戳变化之前，工具调用还会

@@ -113,6 +113,7 @@ function acceptAll(request) {
  * @property {() => import('./tiers.js').Tiers} [read] - 读取当前状态；只有状态路由需要。
  * @property {(tiers: import('./tiers.js').Tiers) => void} [write] - 持久化新状态；只有状态路由需要。
  * @property {() => readonly string[]} [deployment] - 部署默认（插件行的 `config.deny`），供面板只读展示。
+ * @property {() => readonly { id: string, path: string, title: string, sessions: number }[]} [workspaces] - 本宿主的 dsh 工作区；面板据此让人挑"哪个项目"。
  * @property {(sessionId: string) => { cwd: string | null } } [sessionInfo] - 查会话工作区；缺省时路由回答 501。
  * @property {{ warn: (message: string) => void }} [logger] - 诊断输出。
  */
@@ -126,10 +127,12 @@ function acceptAll(request) {
  *
  * @param {import('./tiers.js').Tiers} tiers - 三级状态。
  * @param {readonly string[]} deployment - 部署默认规则。
- * @returns {{ levels: import('./tiers.js').Tiers, deployment: readonly string[] }} 应答体。
+ * @param {readonly { id: string, path: string, title: string, sessions: number }[]} workspaces - 本宿主的 dsh 工作区。
+ * @returns 应答体：三级状态、部署默认、以及可选的 dsh 工作区列表。
  */
-function stateView(tiers, deployment) {
-  return { levels: tiers, deployment }
+function stateView(tiers, deployment, workspaces) {
+  // workspaces 只在状态路由存在；它的缺省是空数组，面板据此知道"这个宿主没有工作区列表"。
+  return { levels: tiers, deployment, workspaces }
 }
 
 /**
@@ -144,6 +147,7 @@ export function createStateHandler(options) {
   const read = options.read ?? (() => { throw new TierError('unsupported', 'this composition exposes no tier state') })
   const write = options.write ?? (() => { throw new TierError('unsupported', 'this composition exposes no tier state') })
   const deployment = options.deployment ?? (() => [])
+  const workspaces = options.workspaces ?? (() => [])
   return async function stateRoute(request, response) {
     const rejection = authorize(request)
     if (rejection !== undefined) {
@@ -152,7 +156,7 @@ export function createStateHandler(options) {
       return
     }
     if (request.method === 'GET') {
-      sendJson(response, 200, stateView(read(), deployment()))
+      sendJson(response, 200, stateView(read(), deployment(), workspaces()))
       return
     }
     if (request.method !== 'POST') {
@@ -163,7 +167,7 @@ export function createStateHandler(options) {
       const change = parseChange(await readJsonBody(request))
       const next = applyChange(read(), change)
       write(next)
-      sendJson(response, 200, stateView(next, deployment()))
+      sendJson(response, 200, stateView(next, deployment(), workspaces()))
     } catch (error) {
       if (error instanceof TierError) {
         sendError(response, error.code === 'body-too-large' ? 413 : 400, error.code, error.message)

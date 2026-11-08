@@ -107,6 +107,7 @@ test('产物: GET /file-shield/state 返回三级状态与只读的部署默认'
   assert.equal(status, 200)
   assert.deepEqual(body.levels, { global: [], projects: {}, sessions: {} })
   assert.deepEqual(body.deployment, ['**/*.pem'], '部署默认单列，面板据此解释它为什么不能删')
+  assert.deepEqual(body.workspaces, [], '没有 workspace 包时如实回答空列表，而不是编一个项目')
 })
 
 test('产物: POST 写入后从磁盘读回来是同一份，错误请求带稳定错误码', async () => {
@@ -125,7 +126,7 @@ test('产物: POST 写入后从磁盘读回来是同一份，错误请求带稳�
 test('产物: 会话路由与浏览路由都在，且没有 agent 注册表时如实回答', async () => {
   const session = await http.get('/file-shield/session?session=s1')
   assert.equal(session.status, 200)
-  assert.deepEqual(session.body, { cwd: null })
+  assert.deepEqual(session.body, { cwd: null, workspace: null })
 
   const browse = await http.get('/file-shield/browse')
   assert.equal(browse.status, 200)
@@ -163,7 +164,7 @@ test('产物: 部署默认与三级规则在守卫上按调用叠加', async () 
   assert.equal((await guard(call('/ws/notes.md', 'other'), next)).kind, 'allow', '别的会话不受影响')
 })
 
-test('产物: client 半按加载器握手注册三个座位，名字与清单成对', () => {
+test('产物: client 半按加载器握手注册四个座位，会话级入口是同级标签页', () => {
   const registrations = []
   const disposers = []
   // 产物是加载器脚本而不是模块：顶层直接调 `window.__ModuleLoader__.load({ id, factory })`，
@@ -218,8 +219,13 @@ test('产物: client 半按加载器握手注册三个座位，名字与清单�
   exports.apply(ctx)
   assert.deepEqual(
     registrations.map(entry => entry.name),
-    ['plugins.bundle.config', 'main', 'sidebar.panellist', 'conversation.session.header.utilities'],
+    ['plugins.bundle.config', 'main', 'sidebar.panellist', 'conversation.view'],
   )
+  const view = registrations[3]
+  assert.equal(view.id, 'file-shield')
+  assert.equal(typeof view.label, 'function', '标签页标题必须是读时才求值的 thunk，才能跟上语言切换')
+  assert.equal(view.order, 20, 'order 落在 chat(0)/trajectory(10) 之后、stats(40) 之前')
+  assert.equal(typeof view.inject, 'function', '会话 id 由注册时注入，页面因此默认锚在当前会话')
   const panel = registrations[2]
   const main = registrations[1]
   assert.equal(panel.id, main.key, '侧边栏清单的 id 必须与主区页面的 key 相同')
