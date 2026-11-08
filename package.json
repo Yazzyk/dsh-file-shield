@@ -1,6 +1,6 @@
 {
   "name": "dsh-file-shield",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "DeepSeek Harness 插件：在 Web GUI 里点选文件或目录，屏蔽 agent 对它们的读取、搜索、写入与编辑，使机密内容与敏感词不进入对话（含敏感词导致请求 400 的场景）。Blocks an agent from reading, searching, writing, or editing chosen files and directories, keeping their contents out of the conversation.",
   "type": "module",
@@ -34,6 +34,7 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
