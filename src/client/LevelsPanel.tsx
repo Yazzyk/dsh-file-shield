@@ -16,7 +16,6 @@ import { useEffect, useState } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // 仅类型：让 'sidebar.panellist' 的 label 与主区 key 使用同一份声明。
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
-import { DirectoryBrowser } from './Browser.tsx'
 import type { NS } from './locales.ts'
 import { StateError, readState, writeState, type StateWrite, type ShieldState } from './state.ts'
 
@@ -78,7 +77,6 @@ export interface RuleEditorProps {
 export function RuleEditor({ t, rules, writable, pickDirectory, pickFile, onSave }: RuleEditorProps) {
   /** 暂存列表；`null` 表示"未编辑"，此时显示该层的当前规则。 */
   const [staged, setStaged] = useState<string[] | null>(null)
-  const [browsing, setBrowsing] = useState(false)
   const [manual, setManual] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
   const [failure, setFailure] = useState<string | undefined>(undefined)
@@ -153,23 +151,21 @@ export function RuleEditor({ t, rules, writable, pickDirectory, pickFile, onSave
           </Button>
         )}
         {/*
-          选文件只有一个入口：桌面应用里是系统文件对话框；纯浏览器拿不到 File 的真实路径
-          （没有 preload 的 __DSH_HOST_PATHS__），同一个按钮原地变成应用内浏览器。
-          两个按钮并排会让"选文件"看起来有两件不同的事，而它们作用完全相同。
+          选文件只有系统文件对话框这一个入口。它要 preload 的 __DSH_HOST_PATHS__ 才能把
+          File 换回真实路径，所以在纯浏览器里不可用——那就禁用按钮，而不是退回别的选择器：
+          同一个动作只该有一个界面，用户不必猜"这次会弹哪一个"。
         */}
-        <Button
-          variant={pickDirectory === undefined && pickFile === undefined ? 'outline' : 'ghost'}
-          disabled={!writable}
-          onClick={() => {
-            if (pickFile === undefined) { setBrowsing(true); return }
-            void pickFile().then((picked) => {
-              if (typeof picked === 'string' && picked !== '') add(picked)
-              else if (picked === null) setBrowsing(true)
-            })
-          }}
-        >
-          {pickFile === undefined ? t('addFile') : t('pickSystemFile')}
-        </Button>
+        {pickFile === undefined ? null : (
+          <Button
+            variant={pickDirectory === undefined ? 'outline' : 'ghost'}
+            disabled={!writable}
+            onClick={() => {
+              void pickFile().then((picked) => { if (typeof picked === 'string' && picked !== '') add(picked) })
+            }}
+          >
+            {t('pickSystemFile')}
+          </Button>
+        )}
       </div>
 
       <div className="dfs-actions">
@@ -217,22 +213,6 @@ export function RuleEditor({ t, rules, writable, pickDirectory, pickFile, onSave
         </div>
       </div>
 
-      {browsing
-        ? (
-          <DirectoryBrowser
-            t={t}
-            onCancel={() => { setBrowsing(false) }}
-            onPickFile={(path) => {
-              add(path)
-              setBrowsing(false)
-            }}
-            onPickDirectory={(path) => {
-              add(path)
-              setBrowsing(false)
-            }}
-          />
-        )
-        : null}
     </div>
   )
 }
@@ -253,7 +233,6 @@ export function LevelsPanel(props: LevelsPanelProps) {
   const [open, setOpen] = useState<string | null>(null)
   /** 刚选好、尚未保存过规则的项目目录。 */
   const [pending, setPending] = useState<string | null>(null)
-  const [browsing, setBrowsing] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -313,7 +292,6 @@ export function LevelsPanel(props: LevelsPanelProps) {
   const pickProject = (path: string) => {
     setPending(path)
     setOpen(path)
-    setBrowsing(false)
   }
 
   return (
@@ -450,25 +428,15 @@ export function LevelsPanel(props: LevelsPanelProps) {
         )}
 
         <div className="dfs-buttons">
-          {/*
-            项目层的键必须是目录，所以主入口就是系统选择器；应用内浏览是它在远程浏览器 /
-            没有 workspace UI 时的替身（那时拿不到本机对话框）。
-          */}
-          {pickDirectory === undefined ? null : (
-            <Button
-              variant="outline"
-              onClick={() => {
-                void pickDirectory().then((picked) => { if (typeof picked === 'string') pickProject(picked) })
-              }}
-            >
-              {t('addSystemDirectory')}
-            </Button>
-          )}
+          {/* 项目层的键必须是目录，所以这里只有一个入口：系统文件夹对话框。 */}
           <Button
-            variant={pickDirectory === undefined ? 'outline' : 'ghost'}
-            onClick={() => { setBrowsing(true) }}
+            variant="outline"
+            disabled={pickDirectory === undefined}
+            onClick={() => {
+              void pickDirectory?.().then((picked) => { if (typeof picked === 'string') pickProject(picked) })
+            }}
           >
-            {t('projectAdd')}
+            {t('addSystemDirectory')}
           </Button>
         </div>
       </section>
@@ -493,20 +461,6 @@ export function LevelsPanel(props: LevelsPanelProps) {
           )}
       </section>
 
-      {browsing
-        ? (
-          <DirectoryBrowser
-            t={t}
-            onCancel={() => { setBrowsing(false) }}
-            onPickDirectory={(path) => { pickProject(path) }}
-            onPickFile={(path) => {
-              // 项目层的键必须是目录，选中文件时取它所在的目录。
-              const cut = path.lastIndexOf('/')
-              pickProject(cut > 0 ? path.slice(0, cut) : path)
-            }}
-          />
-        )
-        : null}
     </div>
   )
 }

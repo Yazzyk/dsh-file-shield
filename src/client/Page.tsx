@@ -16,7 +16,6 @@ import { useMemo, useState, useSyncExternalStore } from 'react'
 // 仅类型：引入 `plugins.bundle.config` 座位与 `ctx.configForms`，不产生运行时导入。
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import { DirectoryBrowser } from './Browser.tsx'
 import type { NS } from './locales.ts'
 
 /** 本页面编辑的设置段：宿主 schema 里唯一可编辑的字段。 */
@@ -72,7 +71,6 @@ function RulesEditor(props: FileShieldPageProps & { form: ConfigForm<RulesSectio
 
   /** 暂存列表；`null` 表示"未编辑"，此时显示已存储的设置段。 */
   const [staged, setStaged] = useState<string[] | null>(null)
-  const [browsing, setBrowsing] = useState(false)
   const [manual, setManual] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
 
@@ -160,7 +158,7 @@ function RulesEditor(props: FileShieldPageProps & { form: ConfigForm<RulesSectio
         )}
 
       <div className="dfs-actions">
-        <Button variant="outline" disabled={!writable} onClick={() => { setBrowsing(true) }}>{t('addFile')}</Button>
+        {/* 只有系统文件夹对话框一个入口：应用内浏览器已经去掉。 */}
         <Button
           variant="outline"
           disabled={!writable || pickDirectory === undefined}
@@ -202,22 +200,6 @@ function RulesEditor(props: FileShieldPageProps & { form: ConfigForm<RulesSectio
         </div>
       </div>
 
-      {browsing
-        ? (
-          <DirectoryBrowser
-            t={t}
-            onCancel={() => { setBrowsing(false) }}
-            onPickFile={(path) => {
-              add(path)
-              setBrowsing(false)
-            }}
-            onPickDirectory={(path) => {
-              add(path)
-              setBrowsing(false)
-            }}
-          />
-        )
-        : null}
     </div>
   )
 }

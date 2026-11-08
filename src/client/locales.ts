@@ -25,8 +25,6 @@ export type FileShieldKey =
   | 'summaryCount'
   | 'rulesHeading'
   | 'emptyRules'
-  | 'addFile'
-  | 'addDirectory'
   | 'addSystemDirectory'
   | 'pickSystemDirectory'
   | 'pickSystemFile'
@@ -72,12 +70,6 @@ export type FileShieldKey =
   | 'sessionCwdUnknown'
   | 'sessionNote'
   | 'close'
-  | 'browseTitle'
-  | 'browseUp'
-  | 'browseChooseDirectory'
-  | 'browseEmpty'
-  | 'browseFailed'
-  | 'browseTruncated'
   | 'cancel'
   | 'kindPattern'
 
@@ -89,8 +81,6 @@ export const zh: Record<FileShieldKey, string> = {
   summaryCount: '已屏蔽 {count} 条规则',
   rulesHeading: '已屏蔽的路径',
   emptyRules: '还没有规则。agent 目前可以读取工作区内的任何文件。',
-  addFile: '选择文件…',
-  addDirectory: '选择目录…',
   addSystemDirectory: '系统目录选择器…',
   pickSystemDirectory: '选择目录…',
   pickSystemFile: '选择文件…',
@@ -136,12 +126,6 @@ export const zh: Record<FileShieldKey, string> = {
   sessionCwdUnknown: '未知',
   sessionNote: '本会话的规则与部署默认、全局、项目层叠加生效，不会顶替它们。',
   close: '关闭',
-  browseTitle: '选择要屏蔽的文件',
-  browseUp: '上一级',
-  browseChooseDirectory: '屏蔽当前目录',
-  browseEmpty: '这个目录是空的',
-  browseFailed: '无法列出该目录',
-  browseTruncated: '条目过多，只显示了一部分',
   cancel: '取消',
   kindPattern: '规则',
 }
@@ -154,8 +138,6 @@ export const en: Record<FileShieldKey, string> = {
   summaryCount: '{count} rule(s) blocked',
   rulesHeading: 'Blocked paths',
   emptyRules: 'No rules yet. The agent can read anything in the workspace.',
-  addFile: 'Pick a file…',
-  addDirectory: 'Pick a directory…',
   addSystemDirectory: 'System directory picker…',
   pickSystemDirectory: 'Pick a directory…',
   pickSystemFile: 'Pick a file…',
@@ -201,12 +183,6 @@ export const en: Record<FileShieldKey, string> = {
   sessionCwdUnknown: 'unknown',
   sessionNote: 'This session\'s rules stack on the deployment default, global, and project levels; they do not replace them.',
   close: 'Close',
-  browseTitle: 'Pick a file to block',
-  browseUp: 'Up one level',
-  browseChooseDirectory: 'Block this directory',
-  browseEmpty: 'This directory is empty',
-  browseFailed: 'Cannot list this directory',
-  browseTruncated: 'Too many entries; only a part is shown',
   cancel: 'Cancel',
   kindPattern: 'Rule',
 }

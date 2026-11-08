@@ -6,7 +6,7 @@
 
 最常见的用法是挡住**含敏感词或机密内容的文件**：这类文字一旦被读进对话，provider 的内容审核会让之后每个请求都返回 400，会话就此卡死；提前屏蔽它们，等于从源头掐掉这件事。
 
-> A DeepSeek Harness (dsh) plugin that blocks an agent from reading, searching, writing, or editing chosen files and directories, keeping their contents — including text a provider rejects with a 400 — out of the conversation. Rules are picked from a file/directory browser on the plugin's own page in the Web GUI.
+> A DeepSeek Harness (dsh) plugin that blocks an agent from reading, searching, writing, or editing chosen files and directories, keeping their contents — including text a provider rejects with a 400 — out of the conversation. Rules are picked with the operating system's own file and folder dialogs.
 
 仓库主页：<https://github.com/Yazzyk/dsh-file-shield>
 
@@ -71,7 +71,7 @@ Error: Access to "/tmp/shield-target/secret.env" is blocked by deployment policy
 - 以 `/` 开头（或 `~` 展开后）的规则是**绝对规则**，对规范化后的绝对路径匹配。
 - 其他规则是**工作区相对规则**，只对相对于会话工作区的路径匹配，不会伸到工作区之外。
 - 匹配时同时比较目标路径和它的每一级祖先目录，所以写一个目录就等于屏蔽它下面的整棵树。
-- 每个目标按**两种拼法**参与匹配：`ctx.fs.resolve()` 给出的稳定身份（`targetKey`，符号链接已解析），以及 `displayPath`（调用方写下的绝对路径，链接保持原样）。macOS 的 `/tmp`、`/var` 是指向 `/private/...` 的符号链接，两者不同，而规则可能写成任一种——文件浏览器选出来的路径就是 display 拼法。只比较规范化身份会让页面里选的 `/tmp/...` 静默失效，所以两种都比。别名的安全性不受影响：针对真实路径写的规则仍然通过规范化身份生效，`ln -s .env notes.txt` 之后再读 `notes.txt` 一样会被拦下。
+- 每个目标按**两种拼法**参与匹配：`ctx.fs.resolve()` 给出的稳定身份（`targetKey`，符号链接已解析），以及 `displayPath`（调用方写下的绝对路径，链接保持原样）。macOS 的 `/tmp`、`/var` 是指向 `/private/...` 的符号链接，两者不同，而规则可能写成任一种——系统对话框给出的路径就是 display 拼法。只比较规范化身份会让页面里选的 `/tmp/...` 静默失效，所以两种都比。别名的安全性不受影响：针对真实路径写的规则仍然通过规范化身份生效，`ln -s .env notes.txt` 之后再读 `notes.txt` 一样会被拦下。
 - 相对规则的锚点是 `exec.agent.session.header.cwd`；没有 agent 的调用没有锚点，此时只有绝对规则生效。
 
 ## 安装
@@ -128,7 +128,7 @@ dsh plugin --profile <profile> remove dsh-file-shield
 
 全局与项目两级从**侧边栏面板**维护（侧边栏的盾牌图标）；会话级在**会话的「屏蔽」标签页**里——它与「对话」「轨迹」是同一排标签，默认就锚在当前会话上，不用再选。面板里的会话段只做汇总与指路。
 
-三级都用同一套编辑手势：**选择目录…** 与 **选择文件…** 都走操作系统对话框（桌面应用）；拿不到真实路径的环境里，选文件自动退化成应用内浏览器，选目录退化成"没这个按钮"。
+三级都用同一套编辑手势：**选择目录…** 与 **选择文件…** 都走**操作系统对话框**。没有第二种选择器——同一个动作只该有一个界面，用户不必猜"这次会弹哪一个"。
 
 数据面是三条插件自己的路由，都先过组合的 `connection` 信任围栏（Host/Origin 挡 DNS rebinding 与跨站，浏览器会话 Cookie 挡未认证调用），且只在同时装配了 `webServer` 与 `connection` 时挂载：
 
@@ -136,8 +136,7 @@ dsh plugin --profile <profile> remove dsh-file-shield
 |---|---|
 | `GET /file-shield/state` | 读三级状态 |
 | `POST /file-shield/state` | 写某一级的规则列表（`scope: global \| project \| session`；空列表等于删掉那一级） |
-| `GET /file-shield/session?session=<id>` | 会话 id → 它的工作区绝对路径（项目级的键只能这么补） |
-| `GET /file-shield/browse?path=<绝对路径>` | 只读列目录，供面板里的文件浏览器用 |
+| `GET /file-shield/session?session=<id>` | 会话 id → 它的工作区绝对路径与所属 dsh 工作区（项目级的键只能这么补） |
 
 规则改动对**下一次工具调用**立即生效：守卫在每次调用时按该调用所属的项目与会话现算生效规则，不需要重启插件，也不需要重新保存。
 
@@ -146,14 +145,13 @@ dsh plugin --profile <profile> remove dsh-file-shield
 侧边栏 **Plugins** → **Installed** → `dsh-file-shield`：
 
 - **选择目录…** 打开**操作系统自己的文件夹对话框**（dsh 的 `uiWorkspace.pickDirectory()`；桌面应用走 preload 桥，普通 Web 走 Host 端选择器）。写一条目录规则就等于屏蔽整棵子树。
-- **选择文件…** 同样打开**操作系统自己的文件对话框**。它开的是 `<input type="file">`，浏览器只给 `File` 对象、不给路径；桌面应用因此用 preload 的 `__DSH_HOST_PATHS__.pathFor(file)`（`electron.webUtils.getPathForFile`）把 `File` 换回真实路径——dsh 自己的输入框接文件引用走的也是这条桥。**这条能力只在桌面应用里有**，纯浏览器拿不到路径就写不成规则。
-- **（纯浏览器 / 远程部署）** 上面那条自动退化成**应用内浏览器**：逐层进入目录并点选文件，走插件自己的只读 `browse` 路由。
+- **选择文件…** 同样打开**操作系统自己的文件对话框**。它开的是 `<input type="file">`，浏览器只给 `File` 对象、不给路径；桌面应用因此用 preload 的 `__DSH_HOST_PATHS__.pathFor(file)`（`electron.webUtils.getPathForFile`）把 `File` 换回真实路径——dsh 自己的输入框接文件引用走的也是这条桥。**这条能力只在桌面应用里有**，纯浏览器里这个按钮不出现（拿不到路径就写不成规则）。
 - 也可以直接输入路径或 glob；
 - **保存** 把规则写进 profile patch 里本行的 `config.deny`（用户层），**恢复部署默认** 清掉用户层。
 
 `deny` 是宿主 schema 里的 **volatile 字段**：保存只让 loader 更新它持有的配置引用，插件不重启，新规则对下一次工具调用立即生效。页面的数据面是宿主 settings 服务为 `file-shield` 这一行投影出的配置表单（`ctx.configForms`，行 id 就是本 bundle patch 声明的那个）；部署里没有这个服务时页面只显示「不可用」，不会把插件激活一起拖住。
 
-因为宿主没有暴露列**文件**的接口（`pickDirectory` 只返回目录、`workspaceFiles.list` 限于会话工作区），选文件用的是一条插件自己的只读路由 `GET /file-shield/browse?path=<绝对路径>`：只接受 GET、只列目录内容、`Cache-Control: no-store`，并且每个请求都先过 `ctx.connection.requestRejection()`——Host/Origin 围栏挡 DNS rebinding 与跨站请求，浏览器会话 Cookie 挡未认证调用。该路由只在同时装配了 `webServer` 与 `connection` 的组合里挂载；缺其中任一时文件浏览器不可用，而不是以无认证方式开放目录列举。
+早先的版本自带一个应用内的目录浏览对话框（`GET /file-shield/browse` + `Browser.tsx`）。它已经**整体移除**：两个选择器并存会让同一个动作有两种界面，而系统对话框在桌面里够用。插件现在只挂两条路由（规则读写、会话工作区），暴露面比之前更小。
 
 ### 从 `cordis.patch.yml`（部署默认）
 

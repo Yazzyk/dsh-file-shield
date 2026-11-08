@@ -142,5 +142,5 @@ test('host: 面板路由声明在 webServer + connection 之后，缺一个就�
     connection: { requestRejection: () => 403 },
   }
   callbacks[1](webCtx)
-  assert.deepEqual(registered, ['/file-shield/browse', '/file-shield/state', '/file-shield/session'])
+  assert.deepEqual(registered, ['/file-shield/state', '/file-shield/session'])
 })
